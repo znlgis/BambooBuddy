@@ -1,0 +1,27 @@
+{
+  "id": "bath",
+  "title": "洗澡",
+  "emoji": "🛁",
+  "color": "#9ec9d8",
+  "timeSlots": [
+    "evening"
+  ],
+  "template": "scrub",
+  "durationHintSec": 70,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "clean": 24,
+    "mood": 6
+  },
+  "reward": {
+    "shoots": 3,
+    "xp": 14
+  },
+  "habit": "睡前洗个香香的澡",
+  "diary": "和竹竹洗了个香香的泡泡澡。",
+  "tip": "用海绵把泡泡擦遍全身"
+}

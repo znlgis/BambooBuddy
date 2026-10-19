@@ -1,0 +1,29 @@
+{
+  "id": "emotion",
+  "title": "情绪",
+  "emoji": "😊",
+  "color": "#f2c9b8",
+  "timeSlots": [
+    "morning",
+    "noon",
+    "evening"
+  ],
+  "template": "pick",
+  "durationHintSec": 45,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "mood": 15,
+    "health": 3
+  },
+  "reward": {
+    "shoots": 2,
+    "xp": 12
+  },
+  "habit": "说出自己的心情",
+  "diary": "认出了竹竹的心情，还抱了抱它。",
+  "tip": "看看竹竹的眼睛和嘴巴"
+}

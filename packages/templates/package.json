@@ -1,0 +1,41 @@
+{
+  "name": "@bamboo/templates",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./layout": "./src/layout.ts",
+    "./core": "./src/core.ts",
+    "./schemas": "./src/schemas.ts",
+    "./scrub": "./src/scrub.ts",
+    "./feed": "./src/feed.ts",
+    "./dress": "./src/dress.ts",
+    "./order": "./src/order.ts",
+    "./tidy": "./src/tidy.ts",
+    "./rhythm": "./src/rhythm.ts",
+    "./pick": "./src/pick.ts",
+    "./learn": "./src/learn.ts",
+    "./scrub.logic": "./src/scrub.logic.ts",
+    "./feed.logic": "./src/feed.logic.ts",
+    "./dress.logic": "./src/dress.logic.ts",
+    "./order.logic": "./src/order.logic.ts",
+    "./tidy.logic": "./src/tidy.logic.ts",
+    "./rhythm.logic": "./src/rhythm.logic.ts",
+    "./pick.logic": "./src/pick.logic.ts",
+    "./learn.logic": "./src/learn.logic.ts",
+    "./placeholder": "./src/placeholder.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@bamboo/content": "workspace:*",
+    "@bamboo/game-kit": "workspace:*",
+    "@bamboo/i18n": "workspace:*",
+    "@bamboo/phaser-kit": "workspace:*",
+    "phaser": "^4.2.1",
+    "zod": "^4.6.7"
+  }
+}

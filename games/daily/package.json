@@ -1,0 +1,31 @@
+{
+  "name": "@bamboo/game-daily",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./brush": "./src/games/brush.ts",
+    "./wash": "./src/games/wash.ts",
+    "./feed": "./src/games/feed.ts",
+    "./dress": "./src/games/dress.ts",
+    "./bath": "./src/games/bath.ts",
+    "./sleep": "./src/games/sleep.ts",
+    "./tidy": "./src/games/tidy.ts",
+    "./sport": "./src/games/sport.ts",
+    "./emotion": "./src/games/emotion.ts",
+    "./learn": "./src/games/learn.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@bamboo/content": "workspace:*",
+    "@bamboo/game-kit": "workspace:*",
+    "@bamboo/i18n": "workspace:*",
+    "@bamboo/phaser-kit": "workspace:*",
+    "@bamboo/templates": "workspace:*",
+    "phaser": "^4.2.1"
+  }
+}

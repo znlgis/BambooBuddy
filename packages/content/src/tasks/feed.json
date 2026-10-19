@@ -1,0 +1,30 @@
+{
+  "id": "feed",
+  "title": "吃饭",
+  "emoji": "🥕",
+  "color": "#f0c987",
+  "timeSlots": [
+    "morning",
+    "noon",
+    "evening"
+  ],
+  "template": "feed",
+  "durationHintSec": 70,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "fullness": 22,
+    "health": 6,
+    "mood": 4
+  },
+  "reward": {
+    "shoots": 3,
+    "xp": 14
+  },
+  "habit": "不挑食，每样都尝一点",
+  "diary": "给竹竹喂了蔬菜和水果，它吃得很开心。",
+  "tip": "把食物拖到竹竹嘴边"
+}

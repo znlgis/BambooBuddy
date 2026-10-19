@@ -1,0 +1,29 @@
+{
+  "id": "sport",
+  "title": "运动",
+  "emoji": "🐾",
+  "color": "#a8c68a",
+  "timeSlots": [
+    "morning",
+    "noon"
+  ],
+  "template": "rhythm",
+  "durationHintSec": 55,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "health": 12,
+    "mood": 7,
+    "energy": 5
+  },
+  "reward": {
+    "shoots": 3,
+    "xp": 13
+  },
+  "habit": "每天动一动，身体棒棒",
+  "diary": "和竹竹一起跳过竹竿，身体暖暖的。",
+  "tip": "竹竿打开的时候点一下"
+}

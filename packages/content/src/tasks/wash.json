@@ -1,0 +1,29 @@
+{
+  "id": "wash",
+  "title": "洗手",
+  "emoji": "🧼",
+  "color": "#a9cfd6",
+  "timeSlots": [
+    "morning",
+    "noon",
+    "evening"
+  ],
+  "template": "scrub",
+  "durationHintSec": 40,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "clean": 12,
+    "health": 4
+  },
+  "reward": {
+    "shoots": 2,
+    "xp": 10
+  },
+  "habit": "饭前便后要洗手",
+  "diary": "饭前和竹竹一起把手洗得香香的。",
+  "tip": "手心手背，都要搓一搓"
+}

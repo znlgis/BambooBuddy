@@ -1,0 +1,28 @@
+{
+  "id": "brush",
+  "title": "刷牙",
+  "emoji": "🪥",
+  "color": "#e9b7a7",
+  "timeSlots": [
+    "morning",
+    "evening"
+  ],
+  "template": "scrub",
+  "durationHintSec": 45,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "clean": 16,
+    "mood": 5
+  },
+  "reward": {
+    "shoots": 2,
+    "xp": 12
+  },
+  "habit": "早晚都要刷牙",
+  "diary": "今天帮竹竹刷了牙，牙齿亮晶晶。",
+  "tip": "上面、下面、里面，都要刷到哦"
+}

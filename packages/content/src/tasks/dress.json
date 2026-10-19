@@ -1,0 +1,27 @@
+{
+  "id": "dress",
+  "title": "穿衣",
+  "emoji": "👕",
+  "color": "#c9b6e4",
+  "timeSlots": [
+    "morning"
+  ],
+  "template": "dress",
+  "durationHintSec": 55,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "mood": 9,
+    "health": 3
+  },
+  "reward": {
+    "shoots": 2,
+    "xp": 12
+  },
+  "habit": "自己的衣服自己穿",
+  "diary": "帮竹竹穿好衣服，它自己扣上了扣子。",
+  "tip": "帽子放头上，围兜放胸口"
+}

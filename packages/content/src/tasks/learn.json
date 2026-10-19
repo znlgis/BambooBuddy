@@ -1,0 +1,28 @@
+{
+  "id": "learn",
+  "title": "学习",
+  "emoji": "🔺",
+  "color": "#cfc08a",
+  "timeSlots": [
+    "morning",
+    "noon"
+  ],
+  "template": "learn",
+  "durationHintSec": 50,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "mood": 9,
+    "health": 4
+  },
+  "reward": {
+    "shoots": 2,
+    "xp": 13
+  },
+  "habit": "每天认一样新东西",
+  "diary": "一起认了颜色、形状和数字。",
+  "tip": "点一点你选中的卡片"
+}

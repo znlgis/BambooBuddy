@@ -1,0 +1,28 @@
+{
+  "id": "tidy",
+  "title": "整理",
+  "emoji": "🧸",
+  "color": "#b7cfa8",
+  "timeSlots": [
+    "noon",
+    "evening"
+  ],
+  "template": "tidy",
+  "durationHintSec": 60,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "mood": 10,
+    "clean": 5
+  },
+  "reward": {
+    "shoots": 2,
+    "xp": 12
+  },
+  "habit": "玩具玩完要收好",
+  "diary": "把玩具一件件送回了自己的箱子。",
+  "tip": "看看箱子上的图案再放"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "sleep",
+  "title": "睡觉",
+  "emoji": "🌙",
+  "color": "#aeb6d9",
+  "timeSlots": [
+    "evening"
+  ],
+  "template": "order",
+  "durationHintSec": 50,
+  "ageRange": [
+    4,
+    8
+  ],
+  "unlockLevel": 1,
+  "stats": {
+    "energy": 26,
+    "health": 6
+  },
+  "reward": {
+    "shoots": 3,
+    "xp": 14
+  },
+  "habit": "按时睡觉，长得高高的",
+  "diary": "拉窗帘、关灯，哄竹竹睡着了。",
+  "tip": "按顺序一步一步来"
+}

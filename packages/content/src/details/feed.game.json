@@ -1,0 +1,58 @@
+{
+  "intro": "竹竹饿啦，喂它吃点好东西吧！",
+  "done": "吃得饱饱的，身体棒棒！",
+  "retry": "再喂一口吧。",
+  "levelScript": {
+    "room": "kitchen",
+    "needKinds": [
+      "bamboo",
+      "veg",
+      "protein",
+      "fruit"
+    ],
+    "foods": [
+      {
+        "id": "bamboo",
+        "kind": "bamboo",
+        "bites": 1,
+        "x": 0.12,
+        "y": 0.62
+      },
+      {
+        "id": "carrot",
+        "kind": "veg",
+        "bites": 2,
+        "x": 0.3,
+        "y": 0.3
+      },
+      {
+        "id": "apple",
+        "kind": "fruit",
+        "bites": 2,
+        "x": 0.5,
+        "y": 0.62
+      },
+      {
+        "id": "rice",
+        "kind": "grain",
+        "bites": 1,
+        "x": 0.7,
+        "y": 0.3
+      },
+      {
+        "id": "fish",
+        "kind": "protein",
+        "bites": 2,
+        "x": 0.88,
+        "y": 0.62
+      },
+      {
+        "id": "cookie",
+        "kind": "snack",
+        "bites": 1,
+        "x": 0.5,
+        "y": 0.86
+      }
+    ]
+  }
+}

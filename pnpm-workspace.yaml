@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'games/*'
+
+allowBuilds:
+  esbuild: true
+  '@tailwindcss/oxide': true

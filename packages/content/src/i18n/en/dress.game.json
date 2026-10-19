@@ -1,0 +1,38 @@
+{
+  "intro": "Help Bamboo get dressed!",
+  "done": "All dressed — ready to play outside!",
+  "retry": "That's not its place. Try again.",
+  "levelScript": {
+    "room": "closet",
+    "items": [
+      {
+        "id": "hat",
+        "slot": "hat",
+        "color": "#7aa05c",
+        "x": 0.16,
+        "y": 0.5
+      },
+      {
+        "id": "bib",
+        "slot": "bib",
+        "color": "#f2c14e",
+        "x": 0.38,
+        "y": 0.5
+      },
+      {
+        "id": "backpack",
+        "slot": "backpack",
+        "color": "#e07a6a",
+        "x": 0.62,
+        "y": 0.5
+      },
+      {
+        "id": "shoes",
+        "slot": "shoes",
+        "color": "#55798f",
+        "x": 0.84,
+        "y": 0.5
+      }
+    ]
+  }
+}

@@ -1,12 +1,24 @@
+import type { Locale } from '@bamboo/content/ids';
+
+export type { Locale };
+
 /**
- * 界面文案表：中文一份（面向 4–8 岁中文儿童，全程中文语音引导）。
+ * 界面文案表：中文与英文各一份。
  *
  * 为什么仍然单独一个包：通用标签（"开始""再玩一次"）不属于任何一条任务内容，
- * 也不该散落在 8 个模板里各写一遍。文案键是联合类型 —— 写错一个键在 typecheck 就报。
+ * 也不该散落在 8 个模板里各写一遍。文案键是联合类型 —— 少写一个键在 typecheck 就报。
+ *
+ * 内容里的标题 / 习惯 / 日记 / 语音由 @bamboo/content 的英文补丁提供；
+ * 这里只放"界面通用文案 + 玩法通用按钮"。
  */
 export const zhCN = {
   'app.title': '熊猫宝宝的一天',
   'app.subtitle': '和竹竹一起过好每一天',
+  'app.parentHint': '长按三秒进入家长中心',
+  'pet.name': '竹竹',
+  'locale.switch': 'EN',
+  'locale.aria': '切换中英文',
+
   'nav.home': '小屋',
   'nav.tasks': '任务',
   'nav.dress': '装扮',
@@ -58,6 +70,7 @@ export const zhCN = {
   'tasks.stickerHint': '连续做 3 天，就能得到一张贴纸',
   'tasks.locked': '竹竹长大一点就能玩啦',
   'tasks.lockedAt': '长大到第 {n} 阶段解锁',
+  'tasks.duration': '{n} 秒',
 
   'dress.title': '竹竹的装扮',
   'dress.clothes': '衣服',
@@ -87,6 +100,7 @@ export const zhCN = {
   'diary.streak': '连续 {n} 天',
   'diary.daysAgo': '{n} 天前',
   'diary.yesterday': '昨天',
+  'diary.unknown': '？',
 
   'parent.title': '家长中心',
   'parent.intro': '《熊猫宝宝的一天》没有广告、没有内购、没有账号，也不会联网上传任何信息。孩子的进度只保存在这台设备上。',
@@ -134,6 +148,41 @@ export const zhCN = {
   'game.jump': '跳！',
   'game.listen': '听一听',
   'game.retry': '没关系，再试一次',
+  'game.jumps': '跳过 {n} / {total}',
+  'game.combo': '连击 ×{n}',
+  'game.balanced': '吃得真均衡！',
+  'game.balance': '均衡饮食',
+  'game.nextStep': '现在：',
+  'game.wipeHint': '擦一擦吧',
+  'game.rinseHint': '冲一冲吧',
+  'game.start': '开始',
+
+  'food.bamboo': '竹子',
+  'food.veg': '蔬菜',
+  'food.fruit': '水果',
+  'food.grain': '米饭',
+  'food.protein': '鱼肉',
+  'food.snack': '点心',
+
+  'emotion.happy': '开心',
+  'emotion.sad': '难过',
+  'emotion.angry': '生气',
+  'emotion.scared': '害怕',
+  'emotion.sleepy': '困了',
+  'comfort.hug': '抱一抱竹竹',
+  'comfort.pat': '拍拍竹竹',
+  'comfort.highfive': '和竹竹击掌',
+
+  'slot.hat': '帽子',
+  'slot.bib': '围兜',
+  'slot.outfit': '衣服',
+  'slot.backpack': '小书包',
+  'slot.shoes': '小鞋子',
+  'slot.wallpaper': '墙纸',
+  'slot.bed': '小床',
+  'slot.shelf': '书架',
+  'slot.toyCorner': '玩具角',
+  'slot.rug': '地毯',
 
   'hint.brush': '竹竹想刷牙啦',
   'hint.bath': '想洗个香香的澡',
@@ -157,9 +206,6 @@ export const zhCN = {
   'care.unlock': '亲密度 {n} 解锁：{name}',
 } as const;
 
-export type Locale = 'zh-CN';
 export type MessageKey = keyof typeof zhCN;
 export type MessageParams = Record<string, string | number>;
 export type Translator = (key: MessageKey, params?: MessageParams) => string;
-
-export const messages = { 'zh-CN': zhCN } as const;

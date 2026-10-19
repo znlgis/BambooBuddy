@@ -1,0 +1,72 @@
+{
+  "intro": "Let’s take a warm, bubbly bath!",
+  "done": "So clean and cosy!",
+  "retry": "There are bubbles here — wipe again.",
+  "levelScript": {
+    "room": "bathroom",
+    "tool": "sponge",
+    "rubs": 2,
+    "spots": [
+      {
+        "id": "d1",
+        "x": 0.2,
+        "y": 0.28,
+        "size": 1,
+        "kind": "dirt"
+      },
+      {
+        "id": "d2",
+        "x": 0.46,
+        "y": 0.2,
+        "size": 0.9,
+        "kind": "dirt"
+      },
+      {
+        "id": "d3",
+        "x": 0.72,
+        "y": 0.28,
+        "size": 1.1,
+        "kind": "dirt"
+      },
+      {
+        "id": "d4",
+        "x": 0.28,
+        "y": 0.5,
+        "size": 0.9,
+        "kind": "dirt"
+      },
+      {
+        "id": "d5",
+        "x": 0.54,
+        "y": 0.55,
+        "size": 1,
+        "kind": "dirt"
+      },
+      {
+        "id": "d6",
+        "x": 0.8,
+        "y": 0.48,
+        "size": 0.85,
+        "kind": "dirt"
+      },
+      {
+        "id": "d7",
+        "x": 0.34,
+        "y": 0.74,
+        "size": 1,
+        "kind": "dirt"
+      },
+      {
+        "id": "d8",
+        "x": 0.66,
+        "y": 0.76,
+        "size": 0.9,
+        "kind": "dirt"
+      }
+    ],
+    "finish": {
+      "kind": "wipe",
+      "taps": 5
+    }
+  }
+}

@@ -6,6 +6,8 @@ export interface CatalogItem {
   id: string;
   slot: CatalogSlot;
   name: string;
+  /** 英文界面显示名（与 name 一一对应） */
+  nameEn: string;
   emoji: string;
   costShoots: number;
   costFragments: number;
@@ -40,26 +42,26 @@ export const ROOM_SLOT_NAMES: Record<RoomSlot, string> = {
  */
 export const CATALOG: readonly CatalogItem[] = [
   // ---------- 衣服 ----------
-  { id: 'hat-bamboo', slot: 'hat', name: '竹叶帽', emoji: '🎋', costShoots: 8, costFragments: 0, unlockLevel: 1 },
-  { id: 'hat-straw', slot: 'hat', name: '小草帽', emoji: '👒', costShoots: 12, costFragments: 0, unlockLevel: 2 },
-  { id: 'hat-crown', slot: 'hat', name: '小皇冠', emoji: '👑', costShoots: 16, costFragments: 1, unlockLevel: 3 },
-  { id: 'bib-star', slot: 'bib', name: '星星围兜', emoji: '⭐', costShoots: 6, costFragments: 0, unlockLevel: 1 },
-  { id: 'bib-bamboo', slot: 'bib', name: '竹子围兜', emoji: '🍃', costShoots: 10, costFragments: 0, unlockLevel: 2 },
-  { id: 'bib-flower', slot: 'bib', name: '小花围兜', emoji: '🌸', costShoots: 14, costFragments: 1, unlockLevel: 3 },
-  { id: 'outfit-pjs', slot: 'outfit', name: '星星睡衣', emoji: '🌙', costShoots: 14, costFragments: 1, unlockLevel: 2 },
-  { id: 'outfit-rain', slot: 'outfit', name: '小雨衣', emoji: '🌧️', costShoots: 18, costFragments: 2, unlockLevel: 3 },
-  { id: 'backpack-red', slot: 'backpack', name: '小红书包', emoji: '🎒', costShoots: 12, costFragments: 0, unlockLevel: 2 },
-  { id: 'backpack-leaf', slot: 'backpack', name: '竹叶小包', emoji: '🍀', costShoots: 16, costFragments: 1, unlockLevel: 3 },
-  { id: 'shoes-red', slot: 'shoes', name: '小红鞋', emoji: '👟', costShoots: 10, costFragments: 0, unlockLevel: 2 },
-  { id: 'shoes-green', slot: 'shoes', name: '小绿鞋', emoji: '🥿', costShoots: 15, costFragments: 1, unlockLevel: 3 },
+  { id: 'hat-bamboo', slot: 'hat', name: '竹叶帽', nameEn: 'Bamboo Leaf Hat', emoji: '🎋', costShoots: 8, costFragments: 0, unlockLevel: 1 },
+  { id: 'hat-straw', slot: 'hat', name: '小草帽', nameEn: 'Straw Hat', emoji: '👒', costShoots: 12, costFragments: 0, unlockLevel: 2 },
+  { id: 'hat-crown', slot: 'hat', name: '小皇冠', nameEn: 'Little Crown', emoji: '👑', costShoots: 16, costFragments: 1, unlockLevel: 3 },
+  { id: 'bib-star', slot: 'bib', name: '星星围兜', nameEn: 'Star Bib', emoji: '⭐', costShoots: 6, costFragments: 0, unlockLevel: 1 },
+  { id: 'bib-bamboo', slot: 'bib', name: '竹子围兜', nameEn: 'Bamboo Bib', emoji: '🍃', costShoots: 10, costFragments: 0, unlockLevel: 2 },
+  { id: 'bib-flower', slot: 'bib', name: '小花围兜', nameEn: 'Flower Bib', emoji: '🌸', costShoots: 14, costFragments: 1, unlockLevel: 3 },
+  { id: 'outfit-pjs', slot: 'outfit', name: '星星睡衣', nameEn: 'Star Pyjamas', emoji: '🌙', costShoots: 14, costFragments: 1, unlockLevel: 2 },
+  { id: 'outfit-rain', slot: 'outfit', name: '小雨衣', nameEn: 'Raincoat', emoji: '🌧️', costShoots: 18, costFragments: 2, unlockLevel: 3 },
+  { id: 'backpack-red', slot: 'backpack', name: '小红书包', nameEn: 'Red Backpack', emoji: '🎒', costShoots: 12, costFragments: 0, unlockLevel: 2 },
+  { id: 'backpack-leaf', slot: 'backpack', name: '竹叶小包', nameEn: 'Leaf Pouch', emoji: '🍀', costShoots: 16, costFragments: 1, unlockLevel: 3 },
+  { id: 'shoes-red', slot: 'shoes', name: '小红鞋', nameEn: 'Red Shoes', emoji: '👟', costShoots: 10, costFragments: 0, unlockLevel: 2 },
+  { id: 'shoes-green', slot: 'shoes', name: '小绿鞋', nameEn: 'Green Shoes', emoji: '🥿', costShoots: 15, costFragments: 1, unlockLevel: 3 },
   // ---------- 小窝 ----------
-  { id: 'room-wall-cream', slot: 'wallpaper', name: '米白墙', emoji: '🏠', costShoots: 0, costFragments: 0, unlockLevel: 1, default: true },
-  { id: 'room-wall-forest', slot: 'wallpaper', name: '竹林墙纸', emoji: '🎍', costShoots: 20, costFragments: 0, unlockLevel: 3 },
-  { id: 'room-rug-green', slot: 'rug', name: '竹绿地毯', emoji: '🟩', costShoots: 0, costFragments: 0, unlockLevel: 1, default: true },
-  { id: 'room-rug-flower', slot: 'rug', name: '小花地毯', emoji: '🌼', costShoots: 12, costFragments: 0, unlockLevel: 2 },
-  { id: 'room-bed-cloud', slot: 'bed', name: '云朵床', emoji: '☁️', costShoots: 18, costFragments: 2, unlockLevel: 2 },
-  { id: 'room-shelf', slot: 'shelf', name: '小书架', emoji: '📚', costShoots: 16, costFragments: 0, unlockLevel: 3 },
-  { id: 'room-toy', slot: 'toyCorner', name: '玩具角', emoji: '🧸', costShoots: 22, costFragments: 2, unlockLevel: 3 },
+  { id: 'room-wall-cream', slot: 'wallpaper', name: '米白墙', nameEn: 'Cream Wall', emoji: '🏠', costShoots: 0, costFragments: 0, unlockLevel: 1, default: true },
+  { id: 'room-wall-forest', slot: 'wallpaper', name: '竹林墙纸', nameEn: 'Bamboo Wallpaper', emoji: '🎍', costShoots: 20, costFragments: 0, unlockLevel: 3 },
+  { id: 'room-rug-green', slot: 'rug', name: '竹绿地毯', nameEn: 'Bamboo Rug', emoji: '🟩', costShoots: 0, costFragments: 0, unlockLevel: 1, default: true },
+  { id: 'room-rug-flower', slot: 'rug', name: '小花地毯', nameEn: 'Flower Rug', emoji: '🌼', costShoots: 12, costFragments: 0, unlockLevel: 2 },
+  { id: 'room-bed-cloud', slot: 'bed', name: '云朵床', nameEn: 'Cloud Bed', emoji: '☁️', costShoots: 18, costFragments: 2, unlockLevel: 2 },
+  { id: 'room-shelf', slot: 'shelf', name: '小书架', nameEn: 'Little Bookshelf', emoji: '📚', costShoots: 16, costFragments: 0, unlockLevel: 3 },
+  { id: 'room-toy', slot: 'toyCorner', name: '玩具角', nameEn: 'Toy Corner', emoji: '🧸', costShoots: 22, costFragments: 2, unlockLevel: 3 },
 ];
 
 export function findItem(id: string): CatalogItem | undefined {

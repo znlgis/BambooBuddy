@@ -1,4 +1,5 @@
 import { loadTask } from '@bamboo/content';
+import type { Locale } from '@bamboo/content/ids';
 import type { DebugOptions, GameContext, GameEventMap, GameManifest } from '@bamboo/game-kit';
 import { recordDebugEvent } from './debug';
 import { platform } from './platform';
@@ -62,8 +63,9 @@ export async function createGameContext(
   container: HTMLElement,
   hooks: GameHostHooks,
   completedBefore: boolean,
+  locale: Locale,
 ): Promise<GameContext> {
-  const task = await loadTask(manifest.id);
+  const task = await loadTask(manifest.id, locale);
   if (!task) throw new Error('找不到玩法内容：' + manifest.id);
 
   return {
@@ -71,7 +73,7 @@ export async function createGameContext(
     manifest,
     task,
     services: platform,
-    locale: 'zh-CN',
+    locale,
     reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     debug: readDebugOptions(),
     completedBefore,

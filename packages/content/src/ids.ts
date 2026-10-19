@@ -6,6 +6,11 @@
  * 这正是 CHAGS 在 `@chags/content` 与 `@chags/content/full` 之间踩过的坑。
  */
 
+/** 界面与内容支持的语言。唯一事实来源，game-kit / i18n 都从这里再导出。 */
+export const LOCALES = ['zh-CN', 'en'] as const;
+export type Locale = (typeof LOCALES)[number];
+export const DEFAULT_LOCALE: Locale = 'zh-CN';
+
 /** 十个日常主题：id 同时是内容 id、存档键、游戏包导出名 —— 只在这里定义一次 */
 export const TASK_IDS = [
   'brush',
@@ -38,9 +43,15 @@ export type Stats = Record<StatKey, number>;
 export const TIME_SLOTS = ['morning', 'noon', 'evening'] as const;
 export type TimeSlot = (typeof TIME_SLOTS)[number];
 
-/** 任务卡上展示的时段名 */
+/** 任务卡上展示的时段名（中文；英文界面走 @bamboo/i18n 的 time.* 键） */
 export const SLOT_LABELS: Record<TimeSlot, string> = {
   morning: '早上',
   noon: '中午',
   evening: '晚上',
+};
+
+export const SLOT_LABELS_EN: Record<TimeSlot, string> = {
+  morning: 'Morning',
+  noon: 'Noon',
+  evening: 'Evening',
 };

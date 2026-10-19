@@ -409,7 +409,7 @@ export function createScrubScene(ctx: GameContext, level: ScrubLevel): Phaser.Ty
       const button = this.addButton(
         SCRUB_LAYOUT.finish.x,
         SCRUB_LAYOUT.finish.y,
-        kind === 'wipe' ? '擦一擦' : '冲一冲',
+        kind === 'wipe' ? this.tr('game.wipe') : this.tr('game.rinse'),
         () => this.attemptFinish(),
         {
           width: 420,
@@ -421,7 +421,7 @@ export function createScrubScene(ctx: GameContext, level: ScrubLevel): Phaser.Ty
       button.setDepth(300);
       this.finishButton = button;
       popIn(this, button, 100);
-      if (!this.instant && !this.autoplay) this.say(kind === 'wipe' ? '擦一擦吧' : '冲一冲吧', 2400, 250);
+      if (!this.instant && !this.autoplay) this.say(kind === 'wipe' ? this.tr('game.wipeHint') : this.tr('game.rinseHint'), 2400, 250);
     }
 
     /** 每按一下冲/擦，目标区上就有一小段水柱或毛巾掠过的反馈 */

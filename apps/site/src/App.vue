@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { t } from '@bamboo/i18n';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { navigate, useRoute } from './router';
 import { platform } from './shell/platform';
+import { useI18n } from './shell/useI18n';
 import { useProgress } from './stores/progress';
 import { useSettings } from './stores/settings';
 import DiaryView from './views/DiaryView.vue';
@@ -17,6 +17,7 @@ import TasksView from './views/TasksView.vue';
 const PlayView = defineAsyncComponent(() => import('./views/PlayView.vue'));
 const ParentView = defineAsyncComponent(() => import('./views/ParentView.vue'));
 
+const { t, locale } = useI18n();
 const route = useRoute();
 const progress = useProgress();
 const settings = useSettings();
@@ -106,7 +107,7 @@ function navClass(active: boolean): string {
         type="button"
         data-testid="app-title"
         class="min-h-12 min-w-0 flex-1 rounded-2xl text-left active:scale-[0.99]"
-        title="长按三秒进入家长中心"
+        :title="t('app.parentHint')"
         @click="onTitleClick"
         @pointerdown="startParentHold"
         @pointerup="cancelParentHold"
@@ -118,6 +119,15 @@ function navClass(active: boolean): string {
       </button>
 
       <nav class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          data-testid="nav-lang"
+          class="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-card px-3 text-base font-bold text-bamboo-deep active:scale-95"
+          :aria-label="t('locale.aria')"
+          @click="locale.toggle()"
+        >
+          {{ locale.current === 'zh-CN' ? 'EN' : '中文' }}
+        </button>
         <button
           type="button"
           data-testid="nav-diary"
@@ -147,7 +157,7 @@ function navClass(active: boolean): string {
     >
       <PlayView
         v-if="route.name === 'player' && route.taskId"
-        :key="route.taskId"
+        :key="route.taskId + ':' + locale.current"
         :task-id="route.taskId"
       />
       <ParentView v-else-if="route.name === 'parent'" />

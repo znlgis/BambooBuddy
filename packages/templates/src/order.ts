@@ -59,6 +59,7 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
     private dim: Phaser.GameObjects.Graphics | null = null;
     private progress: Phaser.GameObjects.Graphics | null = null;
     private stepLabel: Phaser.GameObjects.Text | null = null;
+    private stepPill: Phaser.GameObjects.Graphics | null = null;
     private hintRing: Phaser.GameObjects.Graphics | null = null;
     private props = new Map<string, OrderProp>();
     private finished = false;
@@ -81,8 +82,10 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       this.drawProps();
       this.drawHeader(ctx.task.title);
       this.drawProgressBar();
+      // 英文的步骤名更长（Next: Turn off light），底下一张药丸卡保证它在任何墙面上都读得清
+      this.stepPill = this.add.graphics().setDepth(21);
       this.stepLabel = this.add
-        .text(this.W / 2, STEP_LABEL_Y, '', textStyle(34, CSS.inkSoft, true))
+        .text(this.W / 2, STEP_LABEL_Y, '', textStyle(30, CSS.inkSoft, true))
         .setOrigin(0.5)
         .setDepth(22);
       this.updateStepLabel();
@@ -222,7 +225,13 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
     private updateStepLabel(): void {
       if (!this.stepLabel) return;
       const step = level.steps[this.state.next];
-      this.stepLabel.setText(step ? '现在：' + step.label : '');
+      const text = step ? this.tr('game.nextStep') + step.label : '';
+      this.stepLabel.setText(text);
+      this.stepPill?.clear();
+      if (text.length > 0 && this.stepPill) {
+        const w = this.stepLabel.width + 64;
+        roundRect(this.stepPill, this.W / 2 - w / 2, STEP_LABEL_Y - 30, w, 60, 30, THEME.card, THEME.outline, 4);
+      }
     }
 
     // ---------------- 输入 ----------------
@@ -428,6 +437,7 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       this.finished = true;
       this.clearHintRing();
       this.stepLabel?.setText('');
+      this.stepPill?.clear();
       this.redrawPanda('sleepy');
       this.sfx('sleep');
       // 三个慢慢飘起来的 Z：不用写字也知道睡着了

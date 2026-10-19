@@ -124,7 +124,11 @@ importers:
         specifier: workspace:*
         version: link:../content
 
-  packages/i18n: {}
+  packages/i18n:
+    dependencies:
+      '@bamboo/content':
+        specifier: workspace:*
+        version: link:../content
 
   packages/phaser-kit:
     dependencies:

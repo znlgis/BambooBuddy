@@ -2,10 +2,10 @@ import {
   TASK_IDS,
   TEMPLATE_IDS,
   TIME_SLOTS,
+  type Locale,
   type TaskDetail,
-  type TemplateId,
 } from '@bamboo/content';
-import { taskDetails } from '@bamboo/content/full';
+import { findCjk, taskDetails, taskDetailsEn } from '@bamboo/content/full';
 import { templateSchemas } from '../schemas';
 
 let errors = 0;
@@ -15,7 +15,7 @@ function fail(message: string): void {
   errors += 1;
 }
 
-function checkLevelScript(task: TaskDetail): void {
+function checkLevelScript(task: TaskDetail, locale: Locale): void {
   const schema = templateSchemas[task.template];
   if (!schema) {
     fail(task.id + ' 的模板没有登记 schema：' + task.template);
@@ -24,7 +24,10 @@ function checkLevelScript(task: TaskDetail): void {
   const result = schema.safeParse(task.levelScript);
   if (!result.success) {
     for (const issue of result.error.issues) {
-      fail(task.id + ' / ' + task.template + ' 脚本 ' + (issue.path.join('.') || '(根)') + '：' + issue.message);
+      fail(
+        task.id + '（' + locale + '）/ ' + task.template + ' 脚本 ' +
+          (issue.path.join('.') || '(根)') + '：' + issue.message,
+      );
     }
     return;
   }
@@ -40,12 +43,15 @@ function checkLevelScript(task: TaskDetail): void {
     }
   }
   if (task.template === 'tidy') {
-    const bins = script.bins as { kind: string }[];
+    const bins = script.bins as { kind: string; label: string }[];
     const items = script.items as { kind: string; id: string }[];
     for (const item of items) {
       if (!bins.some((bin) => bin.kind === item.kind)) {
         fail(task.id + ' 的玩具 ' + item.id + '（' + item.kind + '）没有对应的箱子');
       }
+    }
+    if (new Set(bins.map((bin) => bin.kind)).size !== bins.length) {
+      fail(task.id + ' 的箱子类别重复');
     }
   }
   if (task.template === 'pick') {
@@ -67,23 +73,31 @@ function checkLevelScript(task: TaskDetail): void {
     }
   }
   if (task.template === 'order') {
-    const steps = script.steps as { id: string }[];
+    const steps = script.steps as { id: string; label: string }[];
     if (new Set(steps.map((step) => step.id)).size !== steps.length) {
       fail(task.id + ' 的睡前步骤 id 重复');
     }
   }
 }
 
-console.log('校验 ' + taskDetails.length + ' 个日常任务…\n');
+function checkBannedWords(task: TaskDetail, words: string[], label: string): void {
+  const fields = [task.title, task.habit, task.diary, task.tip, task.intro, task.done, task.retry];
+  for (const text of fields) {
+    for (const word of words) {
+      if (text.includes(word)) fail(task.id + ' 的' + label + '文案出现"' + word + '"：' + text);
+    }
+  }
+}
+
+console.log('校验 ' + taskDetails.length + ' 个日常任务（zh-CN / en）…\n');
 
 const seen = new Set<string>();
 for (const task of taskDetails) {
   console.log('· ' + task.emoji + ' ' + task.title + ' (' + task.id + ')');
   if (seen.has(task.id)) fail('任务 id 重复：' + task.id);
   seen.add(task.id);
-
-  checkLevelScript(task);
-
+  checkLevelScript(task, 'zh-CN');
+  checkBannedWords(task, ['失败', '惩罚', '笨蛋', '输了', '淘汰'], '中文');
   console.log(
     '  · ' +
       task.template +
@@ -107,11 +121,40 @@ for (const task of taskDetails) {
 if (taskDetails.length !== TASK_IDS.length) {
   fail('任务数量不对：期望 ' + TASK_IDS.length + '，实际 ' + taskDetails.length);
 }
+if (taskDetailsEn.length !== taskDetails.length) {
+  fail('英文内容数量不对：期望 ' + taskDetails.length + '，实际 ' + taskDetailsEn.length);
+}
 for (const id of TASK_IDS) {
   if (!seen.has(id)) fail('缺少任务内容：' + id);
 }
 for (const task of taskDetails) {
   if (!TEMPLATE_IDS.includes(task.template)) fail(task.id + ' 的模板未登记：' + task.template);
+}
+
+// ---------- 英文内容：schema + 关卡脚本 + 零残留中文 ----------
+console.log('\n英文内容：');
+for (const task of taskDetailsEn) {
+  const zh = taskDetails.find((item) => item.id === task.id);
+  checkLevelScript(task, 'en');
+  checkBannedWords(task, ['fail', 'stupid', 'loser', 'punish'], '英文');
+  if (zh !== undefined && zh.title === task.title) {
+    fail(task.id + ' 的英文标题与中文相同（疑似漏翻）');
+  }
+  const leaks = findCjk({
+    title: task.title,
+    habit: task.habit,
+    diary: task.diary,
+    tip: task.tip,
+    intro: task.intro,
+    done: task.done,
+    retry: task.retry,
+    levelScript: task.levelScript,
+  });
+  if (leaks.length > 0) {
+    fail(task.id + ' 的英文内容里还有中文：' + leaks.join('、'));
+  } else {
+    console.log('  · ' + task.title + ' (' + task.id + ')');
+  }
 }
 
 // ---------- 时间覆盖：早/中/晚都要有得玩 ----------
@@ -123,32 +166,24 @@ for (const slot of TIME_SLOTS) {
 }
 
 // ---------- 模板覆盖：8 个模板都要被真实内容用到 ----------
-const usedTemplates = new Set<TemplateId>(taskDetails.map((task) => task.template));
+const usedTemplates = new Set(taskDetails.map((task) => task.template));
 console.log('\n玩法模板：' + [...usedTemplates].join('、'));
 for (const template of TEMPLATE_IDS) {
   if (!usedTemplates.has(template)) fail('模板 ' + template + ' 没有被任何任务使用（要么用起来，要么从契约里删掉）');
 }
 
-// ---------- 标题唯一 ----------
-const titles = new Map<string, string>();
-for (const task of taskDetails) {
-  const previous = titles.get(task.title);
-  if (previous) fail('标题重复："' + task.title + '" 同时属于 ' + previous + ' 与 ' + task.id);
-  titles.set(task.title, task.id);
-}
-
-// ---------- 文案口径：不能出现"失败/惩罚/笨"之类伤害性表达 ----------
-const BANNED = ['失败', '惩罚', '笨蛋', '输了', '淘汰'];
-for (const task of taskDetails) {
-  for (const text of [task.intro, task.done, task.retry, task.tip, task.diary]) {
-    for (const word of BANNED) {
-      if (text.includes(word)) fail(task.id + ' 的文案出现"' + word + '"：' + text);
-    }
+// ---------- 标题唯一（中英各自唯一） ----------
+for (const [label, list] of [['中文', taskDetails], ['英文', taskDetailsEn]] as const) {
+  const titles = new Map<string, string>();
+  for (const task of list) {
+    const previous = titles.get(task.title);
+    if (previous) fail(label + '标题重复："' + task.title + '" 同时属于 ' + previous + ' 与 ' + task.id);
+    titles.set(task.title, task.id);
   }
 }
 
 console.log('\n分组：');
-console.log('  · 早上/中午/晚上混合推荐：' + taskDetails.length + ' 个任务全部来自内容目录');
+console.log('  · 英文内容：' + taskDetailsEn.length + ' 条（摘要补丁 + 详情补丁）');
 console.log('  · 状态收益覆盖：' + ['fullness', 'energy', 'clean', 'mood', 'health'].filter((key) => taskDetails.some((task) => key in task.stats)).join('、'));
 
 if (errors > 0) {

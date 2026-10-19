@@ -23,6 +23,7 @@ import { SCENE_KEYS } from './layout';
 import { bite, createFeedState, feedProgress } from './feed.logic';
 import type { FeedLevel, FeedState } from './feed.logic';
 import type { FoodKind } from './common';
+import type { MessageKey } from '@bamboo/i18n';
 
 /** 竹竹嘴的中心（设计坐标）：拖到这里才算喂到 */
 const MOUTH = { x: 375, y: 650 } as const;
@@ -53,14 +54,14 @@ const IDLE_HINT_MS = 12_000;
 /** "吃得真均衡"这句夸奖至少留这么久再做完成结算，不然会被完成卡片打断 */
 const BALANCE_LINE_MS = 900;
 
-/** 食物类别 → 小标签（≤3 字，孩子看图为主，文字只做备份） */
-const FOOD_LABEL: Record<FoodKind, string> = {
-  bamboo: '竹子',
-  veg: '蔬菜',
-  fruit: '水果',
-  grain: '米饭',
-  protein: '鱼肉',
-  snack: '点心',
+/** 食物类别 → 文案键（中英共用一份；孩子看图为主，文字只做备份） */
+const FOOD_LABEL_KEYS: Record<FoodKind, MessageKey> = {
+  bamboo: 'food.bamboo',
+  veg: 'food.veg',
+  fruit: 'food.fruit',
+  grain: 'food.grain',
+  protein: 'food.protein',
+  snack: 'food.snack',
 };
 
 interface FoodView {
@@ -227,8 +228,10 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
         drawPlate(art, 0, 34, 60);
         drawFood(art, food.kind, 0, -2, 0.9);
 
+        const labelText = this.tr(FOOD_LABEL_KEYS[food.kind]);
         const label = this.add
-          .text(0, above ? -97 : 91, FOOD_LABEL[food.kind], textStyle(30, CSS.ink, true))
+          // 英文标签更长（Bamboo shoot / Veggie）：长词缩一号，避免压到盘子与旁边食物
+          .text(0, above ? -97 : 91, labelText, textStyle(labelText.length > 6 ? 24 : 30, CSS.ink, true))
           .setOrigin(0.5);
         const tag = this.add.graphics();
         const tagW = label.width + 26;
@@ -261,7 +264,7 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
       const bar = this.add.graphics().setDepth(40);
       roundRect(bar, 58, 238, 634, 136, 68, THEME.card, THEME.outline, 5);
       this.add
-        .text(this.W / 2, 206, '均衡饮食', textStyle(32, CSS.inkSoft, true))
+        .text(this.W / 2, 206, this.tr('game.balance'), textStyle(32, CSS.inkSoft, true))
         .setOrigin(0.5)
         .setDepth(41);
 
@@ -356,7 +359,7 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
       if (progress.balanced && !this.balancedSaid) {
         this.balancedSaid = true;
         this.balancedAt = this.ctx.services.now();
-        this.say('吃得真均衡！', 2600, 430);
+        this.say(this.tr('game.balanced'), 2600, 430);
       }
       if (progress.complete) this.complete();
     }

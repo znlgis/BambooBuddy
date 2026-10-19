@@ -1,0 +1,58 @@
+{
+  "intro": "Bamboo is hungry — let's feed him something good!",
+  "done": "Full and happy — strong and healthy!",
+  "retry": "One more bite.",
+  "levelScript": {
+    "room": "kitchen",
+    "needKinds": [
+      "bamboo",
+      "veg",
+      "protein",
+      "fruit"
+    ],
+    "foods": [
+      {
+        "id": "bamboo",
+        "kind": "bamboo",
+        "bites": 1,
+        "x": 0.12,
+        "y": 0.62
+      },
+      {
+        "id": "carrot",
+        "kind": "veg",
+        "bites": 2,
+        "x": 0.3,
+        "y": 0.3
+      },
+      {
+        "id": "apple",
+        "kind": "fruit",
+        "bites": 2,
+        "x": 0.5,
+        "y": 0.62
+      },
+      {
+        "id": "rice",
+        "kind": "grain",
+        "bites": 1,
+        "x": 0.7,
+        "y": 0.3
+      },
+      {
+        "id": "fish",
+        "kind": "protein",
+        "bites": 2,
+        "x": 0.88,
+        "y": 0.62
+      },
+      {
+        "id": "cookie",
+        "kind": "snack",
+        "bites": 1,
+        "x": 0.5,
+        "y": 0.86
+      }
+    ]
+  }
+}

@@ -23,7 +23,7 @@ export const hexColor = z
 /** 摘要：小屋 / 任务 / 装扮三屏只需要这些字段（首屏只加载它） */
 export const TaskSummarySchema = z.object({
   id: z.enum(TASK_IDS),
-  title: z.string().min(1).max(12),
+  title: z.string().min(1).max(24),
   emoji: z.string().min(1).max(8),
   color: hexColor,
   timeSlots: z.array(z.enum(TIME_SLOTS)).min(1).max(3),
@@ -40,11 +40,11 @@ export const TaskSummarySchema = z.object({
     xp: z.number().int().min(5).max(30),
   }),
   /** 一句话习惯（家长页 / 日记里出现） */
-  habit: z.string().min(1).max(30),
+  habit: z.string().min(1).max(80),
   /** 日记里的一行（图标 + 语音回顾；日记页只读摘要，所以放在这一半） */
-  diary: z.string().min(1).max(60),
+  diary: z.string().min(1).max(160),
   /** 一句温柔的玩法提示（卡住时才出现） */
-  tip: z.string().min(1).max(40),
+  tip: z.string().min(1).max(100),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;
 
@@ -54,11 +54,11 @@ export type TaskSummary = z.infer<typeof TaskSummarySchema>;
  */
 export const TaskDetailSchema = TaskSummarySchema.extend({
   /** 进入玩法时念的一句（孩子不用读） */
-  intro: z.string().min(1).max(50),
+  intro: z.string().min(1).max(120),
   /** 完成时的夸奖 */
-  done: z.string().min(1).max(50),
+  done: z.string().min(1).max(120),
   /** 做错时的温柔提示（不惩罚） */
-  retry: z.string().min(1).max(40),
+  retry: z.string().min(1).max(100),
   /** 各模板自己的关卡脚本，由 templates/schemas 校验 */
   levelScript: z.unknown(),
 });

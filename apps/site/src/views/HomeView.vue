@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { TASKS } from '@bamboo/content';
+import { taskSummaries } from '@bamboo/content';
 import type { TaskId } from '@bamboo/content';
 import { CARE_ACTIONS } from '@bamboo/game-kit';
 import type { CareAction } from '@bamboo/game-kit';
 import { STAT_KEYS } from '@bamboo/content/ids';
-import { t } from '@bamboo/i18n';
 import type { MessageKey } from '@bamboo/i18n';
 import { currentSlot, dayKey, intimacyLevel, recommendedTasks, statHints } from '@bamboo/progress';
 import { computed, onMounted, ref } from 'vue';
@@ -14,6 +13,7 @@ import { CARE_LABELS, STAT_COLORS, STAT_LABEL_KEYS, TASK_HINT_KEYS } from '../lo
 import { moodFromStats } from '../logic/pandaLook';
 import { navigate } from '../router';
 import { platform } from '../shell/platform';
+import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 
 /**
@@ -22,6 +22,10 @@ import { useProgress } from '../stores/progress';
  * 所有提醒都是"邀请"而不是"警告"（状态再低也不会红、不会扣分、不会结束游戏）。
  */
 const progress = useProgress();
+const { t, locale } = useI18n();
+
+/** 任务标题随语言切换；逻辑（id/收益/解锁）仍用同一份摘要 */
+const tasks = computed(() => taskSummaries(locale.current));
 
 const mood = computed(() => moodFromStats(progress.pet.stats));
 
@@ -41,7 +45,9 @@ const hintText = computed(() =>
 );
 
 /** 今日推荐只放两个入口：小屋里不摆一整屏卡片，孩子会挑花眼 */
-const quickToday = recommendedTasks(dayKey(platform.now()), currentSlot(platform.now()), TASKS, 2);
+const quickToday = computed(() =>
+  recommendedTasks(dayKey(platform.now()), currentSlot(platform.now()), tasks.value, 2),
+);
 
 const careFlash = ref<string | null>(null);
 
@@ -61,7 +67,7 @@ async function doFeed(): Promise<void> {
 
 /** 没到阶段的玩法不能从小屋直接深链进去（任务页会显示"长大一点就能玩啦"） */
 function canPlay(taskId: TaskId): boolean {
-  const summary = TASKS.find((item) => item.id === taskId);
+  const summary = tasks.value.find((item) => item.id === taskId);
   return summary !== undefined && summary.unlockLevel <= progress.stage.id;
 }
 
@@ -111,7 +117,7 @@ onMounted(() => {
           data-testid="home-stage"
           class="rounded-full bg-cream px-3 py-1 text-base font-bold text-bamboo-deep"
         >
-          {{ t('home.stage') }} · {{ progress.stage.name }}
+          {{ t('home.stage') }} · {{ locale.current === 'en' ? progress.stage.nameEn : progress.stage.name }}
         </span>
         <span data-testid="home-shoots" class="rounded-full bg-cream px-3 py-1 text-base text-ink">
           🎋 {{ t('home.shoots', { n: progress.pet.shoots }) }}

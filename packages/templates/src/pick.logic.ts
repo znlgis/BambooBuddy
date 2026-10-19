@@ -11,7 +11,7 @@ export const pickLevelSchema = z.object({
     .array(
       z.object({
         target: z.enum(EMOTIONS),
-        question: z.string().min(1).max(24),
+        question: z.string().min(1).max(80),
         options: z.array(z.enum(EMOTIONS)).length(3),
         comfort: z.enum(CARE_KINDS),
       }),
@@ -61,9 +61,4 @@ export function pickComplete(state: PickState): boolean {
   return state.done;
 }
 
-/** 安慰按钮上的一句话（不同动作不同说法，界面直接用） */
-export const COMFORT_LABELS: Record<CareKind, string> = {
-  hug: '抱一抱竹竹',
-  pat: '拍拍竹竹',
-  highfive: '和竹竹击掌',
-};
+/** 安慰动作本身不携带文案：按钮文字走 @bamboo/i18n 的 comfort.* 键（中英各一份） */

@@ -238,8 +238,8 @@ export function createRhythmScene(ctx: GameContext, level: RhythmLevel): Phaser.
     }
 
     private syncHud(): void {
-      this.hitsText?.setText(`跳过 ${this.state.hits} / ${this.level.jumps}`);
-      this.comboText?.setText(this.state.streak >= 2 ? `连击 ×${this.state.streak}` : '');
+      this.hitsText?.setText(this.tr('game.jumps', { n: this.state.hits, total: this.level.jumps }));
+      this.comboText?.setText(this.state.streak >= 2 ? this.tr('game.combo', { n: this.state.streak }) : '');
     }
 
     private jump(): void {

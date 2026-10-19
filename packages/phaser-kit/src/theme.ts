@@ -50,8 +50,10 @@ export const CSS = {
   grey: '#7a746b',
 } as const;
 
+/* 拉丁字体在前：英文的弯引号（’）在 CJK 字体里是全身宽，看起来像多了一个空格；
+   中文字形这些拉丁字体没有，会自动回落到后面的中文字体，所以中英都不受影响。 */
 export const FONT_STACK =
-  '"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+  '"Segoe UI","Helvetica Neue",Arial,"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
 
 export function textStyle(
   size: number,

@@ -1,4 +1,5 @@
 import type {
+  Locale,
   StatKey,
   Stats,
   TaskDetail,
@@ -7,10 +8,12 @@ import type {
   TimeSlot,
 } from '@bamboo/content';
 
-export type { StatKey, Stats, TaskDetail, TaskId, TemplateId, TimeSlot };
+export type { Locale, StatKey, Stats, TaskDetail, TaskId, TemplateId, TimeSlot };
 
-/** 只有中文（面向 4–8 岁中文儿童）。保留 Locale 这一层，是为了将来加语言时不改游戏契约 */
-export type Locale = 'zh-CN';
+/** 浏览器 / WebView 的 BCP-47 语音标签：'en' 不是合法标签，必须映射成 'en-US' */
+export function speechLang(locale: Locale): string {
+  return locale === 'en' ? 'en-US' : 'zh-CN';
+}
 
 /** 游戏包身份信息：只留真的有人读的字段，标题/年龄等描述的唯一事实来源是内容 JSON */
 export interface GameManifest {

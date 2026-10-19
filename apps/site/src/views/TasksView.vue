@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { TASKS } from '@bamboo/content';
+import { taskSummaries } from '@bamboo/content';
 import type { TaskId } from '@bamboo/content';
-import { t } from '@bamboo/i18n';
 import { currentSlot, dayKey, recommendedTasks } from '@bamboo/progress';
 import { SLOT_LABEL_KEYS } from '../logic/labels';
 import { groupTasksBySlot } from '../logic/taskGroups';
 import { navigate } from '../router';
+import { computed } from 'vue';
 import { platform } from '../shell/platform';
+import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 
 /**
@@ -18,11 +19,14 @@ import { useProgress } from '../stores/progress';
  * 保证同一个 task id 在页面上只有一个可点入口 —— e2e 的定位不会变得含糊。
  */
 const progress = useProgress();
+const { t, locale } = useI18n();
+
+const tasks = computed(() => taskSummaries(locale.current));
 
 const dateKey = dayKey(platform.now());
 const slot = currentSlot(platform.now());
-const recommended = recommendedTasks(dateKey, slot, TASKS, 4);
-const groups = groupTasksBySlot(TASKS);
+const recommended = computed(() => recommendedTasks(dateKey, slot, tasks.value, 4));
+const groups = computed(() => groupTasksBySlot(tasks.value));
 
 function locked(unlockLevel: number): boolean {
   return unlockLevel > progress.stage.id;
@@ -83,7 +87,7 @@ function starText(taskId: TaskId): string {
               <div class="min-w-0 flex-1">
                 <h4 class="text-lg font-bold text-ink">{{ task.title }}</h4>
                 <p class="text-base text-inksoft">
-                  {{ task.durationHintSec }} 秒 · {{ task.habit }}
+                  {{ t('tasks.duration', { n: task.durationHintSec }) }} · {{ task.habit }}
                 </p>
                 <p class="mt-1 flex flex-wrap items-center gap-2 text-base">
                   <span

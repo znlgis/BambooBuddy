@@ -1,4 +1,4 @@
-import { TASKS } from '@bamboo/content';
+import type { TaskSummary } from '@bamboo/content';
 import type { PetState, TaskId } from '@bamboo/game-kit';
 import { addDays } from '@bamboo/progress';
 
@@ -10,9 +10,9 @@ export interface StickerRow {
 }
 
 /** 贴纸册永远是十格：得到的亮起来，没得到的是剪影（孩子能看见"还有几张"） */
-export function stickerRows(pet: PetState): StickerRow[] {
+export function stickerRows(pet: PetState, tasks: readonly TaskSummary[]): StickerRow[] {
   const owned = new Set<TaskId>(pet.stickers);
-  return TASKS.map((task) => ({
+  return tasks.map((task) => ({
     taskId: task.id,
     emoji: task.emoji,
     title: task.title,

@@ -10,6 +10,7 @@ import type {
   Telemetry,
   SaveData,
 } from '@bamboo/game-kit';
+import { speechLang } from '@bamboo/game-kit';
 import { emptySave, migrate } from '@bamboo/progress';
 
 const DB_NAME = 'bamboobuddy';
@@ -198,13 +199,14 @@ export function createWebAudioBus(): AudioBus {
       }
       speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = locale === 'zh-CN' ? 'zh-CN' : locale;
+      utterance.lang = speechLang(locale);
       // 孩子的设备常在耳边：0.9 倍速、0.8 音量，听得清又不炸响
-      utterance.rate = 0.92;
+      utterance.rate = locale === 'en' ? 0.95 : 0.92;
       utterance.pitch = 1.08;
       utterance.volume = 0.8;
       const voices = speechSynthesis.getVoices();
-      const match = voices.find((voice) => voice.lang.toLowerCase().startsWith('zh'));
+      const prefix = locale === 'en' ? 'en' : 'zh';
+      const match = voices.find((voice) => voice.lang.toLowerCase().startsWith(prefix));
       if (match) utterance.voice = match;
       const done = new Promise<SpeechOutcome>((resolve) => {
         let settled = false;

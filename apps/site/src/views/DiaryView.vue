@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { getTaskSummary } from '@bamboo/content';
+import { getTaskSummary, taskSummaries } from '@bamboo/content';
 import type { TaskSummary, TaskId } from '@bamboo/content';
-import { t } from '@bamboo/i18n';
 import { dayKey } from '@bamboo/progress';
 import { computed, ref } from 'vue';
 import { dayKind, stickerRows } from '../logic/diary';
 import type { StickerRow } from '../logic/diary';
 import { navigate } from '../router';
 import { platform } from '../shell/platform';
+import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 import { useSettings } from '../stores/settings';
 
@@ -18,14 +18,17 @@ import { useSettings } from '../stores/settings';
  */
 const progress = useProgress();
 const settings = useSettings();
+const { t, locale } = useI18n();
 
 const todayLines = computed(() =>
   progress.todayRecord.completed
-    .map((id) => getTaskSummary(id))
+    .map((id) => getTaskSummary(id, locale.current))
     .filter((task): task is TaskSummary => task !== undefined),
 );
 
-const stickers = computed(() => stickerRows(progress.pet));
+const stickers = computed(() =>
+  stickerRows(progress.pet, taskSummaries(locale.current)),
+);
 const selected = ref<TaskId | null>(null);
 const selectedRow = computed<StickerRow | null>(
   () => stickers.value.find((row) => row.taskId === selected.value) ?? null,
@@ -36,7 +39,7 @@ function playDiary(): void {
   if (settings.muted) return;
   const lines = todayLines.value.map((task) => task.diary);
   if (lines.length === 0) return;
-  const handle = platform.audio.speak(lines.join(' '), 'zh-CN');
+  const handle = platform.audio.speak(lines.join(' '), locale.current);
   speaking.value = true;
   void handle.done.then(() => {
     speaking.value = false;
@@ -115,7 +118,7 @@ function stickerHint(row: StickerRow): string {
           <span class="text-2xl" :class="row.owned ? '' : 'opacity-30 grayscale'" aria-hidden="true">
             {{ row.emoji }}
           </span>
-          <span class="text-center leading-tight">{{ row.owned ? row.title : '？' }}</span>
+          <span class="text-center leading-tight">{{ row.owned ? row.title : t('diary.unknown') }}</span>
         </button>
       </div>
       <p v-if="selectedRow" class="mt-2 rounded-2xl bg-cream px-3 py-2 text-base text-ink" role="status">

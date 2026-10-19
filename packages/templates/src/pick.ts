@@ -16,8 +16,9 @@ import {
 } from '@bamboo/phaser-kit';
 import type { PandaMood } from '@bamboo/phaser-kit';
 import { SCENE_KEYS } from './layout';
-import { COMFORT_LABELS, chooseEmotion, comfort, createPickState, currentRound } from './pick.logic';
-import type { Emotion, PickLevel, PickState } from './pick.logic';
+import type { MessageKey } from '@bamboo/i18n';
+import { chooseEmotion, comfort, createPickState, currentRound } from './pick.logic';
+import type { CareKind, Emotion, PickLevel, PickState } from './pick.logic';
 
 /** 三张脸卡片的尺寸（≥150×180 的儿童可点下限，这里留得更大） */
 const FACE = { w: 200, h: 230, gap: 24, top: 950 } as const;
@@ -27,12 +28,18 @@ const PANDA = { x: 375, y: 760, scale: 0.82 } as const;
 const COMFORT = { cx: 375, cy: 1254, w: 460, h: 104 } as const;
 
 /** 卡片下面的字：先认脸，字只是补充（4–8 岁不一定识字） */
-const EMOTION_LABELS: Record<Emotion, string> = {
-  happy: '开心',
-  sad: '难过',
-  angry: '生气',
-  scared: '害怕',
-  sleepy: '困了',
+const EMOTION_LABEL_KEYS: Record<Emotion, MessageKey> = {
+  happy: 'emotion.happy',
+  sad: 'emotion.sad',
+  angry: 'emotion.angry',
+  scared: 'emotion.scared',
+  sleepy: 'emotion.sleepy',
+};
+
+const COMFORT_LABEL_KEYS: Record<CareKind, MessageKey> = {
+  hug: 'comfort.hug',
+  pat: 'comfort.pat',
+  highfive: 'comfort.highfive',
 };
 
 /**
@@ -215,8 +222,8 @@ export function createPickScene(ctx: GameContext, level: PickLevel): Phaser.Type
       this.clearCards();
       // 认出心情之后，竹竹的笑容和小爱心就是最直接的"你懂我"
       this.drawPandaMood('happy', true);
-      this.showComfortButton(COMFORT_LABELS[round.comfort]);
-      if (!this.autoplay && !this.instant) this.speak(COMFORT_LABELS[round.comfort]);
+      this.showComfortButton(this.tr(COMFORT_LABEL_KEYS[round.comfort]));
+      if (!this.autoplay && !this.instant) this.speak(this.tr(COMFORT_LABEL_KEYS[round.comfort]));
     }
 
     private finish(): void {
@@ -274,7 +281,7 @@ export function createPickScene(ctx: GameContext, level: PickLevel): Phaser.Type
         roundRect(g, -FACE.w / 2 + 12, -FACE.h / 2 + 12, FACE.w - 24, FACE.h - 24, 18, THEME.paper, null, 0);
         drawEmotionFace(g, emotion, 0, -22, 62);
         const label = this.add
-          .text(0, 78, EMOTION_LABELS[emotion], textStyle(34, CSS.ink, true))
+          .text(0, 78, this.tr(EMOTION_LABEL_KEYS[emotion]), textStyle(34, CSS.ink, true))
           .setOrigin(0.5);
         node.add([g, label]);
         this.cards.push({ emotion, node, x: cx, y: cy });
@@ -312,7 +319,8 @@ export function createPickScene(ctx: GameContext, level: PickLevel): Phaser.Type
       roundRect(g, -COMFORT.w / 2, -COMFORT.h / 2 + 8, COMFORT.w, COMFORT.h, COMFORT.h / 2, shade(THEME.bamboo, 0.72), THEME.outline, 4);
       roundRect(g, -COMFORT.w / 2, -COMFORT.h / 2, COMFORT.w, COMFORT.h, COMFORT.h / 2, THEME.bamboo, THEME.outline, 5);
       heartPath(g, -COMFORT.w / 2 + 62, 0, 27, THEME.card, null);
-      const text = this.add.text(20, -2, label, textStyle(40, CSS.card, true)).setOrigin(0.5);
+      const fontSize = label.length > 10 ? 30 : 40;
+      const text = this.add.text(20, -2, label, textStyle(fontSize, CSS.card, true)).setOrigin(0.5);
       node.add([g, text]);
       this.comfortNode = node;
       this.comfortVisible = true;

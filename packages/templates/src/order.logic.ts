@@ -12,7 +12,7 @@ export const orderLevelSchema = z.object({
       z.object({
         id: z.string().min(1),
         icon: z.enum(ORDER_ICONS),
-        label: z.string().min(1).max(8),
+        label: z.string().min(1).max(24),
       }),
     )
     .min(3)

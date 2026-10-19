@@ -11,11 +11,11 @@ export const learnLevelSchema = z.object({
     .array(
       z.object({
         kind: z.enum(['color', 'shape', 'number']),
-        question: z.string().min(1).max(24),
+        question: z.string().min(1).max(80),
         options: z
           .array(
             z.object({
-              label: z.string().min(1).max(3),
+              label: z.string().min(1).max(8),
               color: hexSchema.optional(),
               shape: z.enum(SHAPES).optional(),
             }),

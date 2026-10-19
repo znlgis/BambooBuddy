@@ -6,10 +6,16 @@
  * 需要 zod 的地方走 '@bamboo/content/full'（Node CLI 与测试）。
  *
  * 小屋 / 任务 / 装扮 / 日记只读摘要；进入玩法时才走 loadTask() 动态 import 详情
- * （语音文案 / 关卡脚本）。外壳一旦直接 import '@bamboo/content/full'，
- * 懒加载就白做了 —— eslint 有一条规则守着。
+ * （语音文案 / 关卡脚本）。英文摘要是另一个动态 chunk，切语言时才下载。
  */
 export * from './ids';
 export type { TaskDetail, TaskDetailExtra, TaskSummary } from './schema';
-export { TASKS, getTaskSummary, allTaskIds } from './tasks';
+export type { DetailPatch, SummaryPatch } from './localize';
+export {
+  TASKS,
+  getTaskSummary,
+  taskSummaries,
+  ensureSummaries,
+  allTaskIds,
+} from './tasks';
 export { loadTask } from './loadTask';

@@ -39,7 +39,8 @@ body {
 body {
   background: var(--color-cream);
   color: var(--color-ink);
-  font-family: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
   /* 孩子会连点、长按：不要出现文字选中与长按呼出菜单 */
   -webkit-user-select: none;
   user-select: none;

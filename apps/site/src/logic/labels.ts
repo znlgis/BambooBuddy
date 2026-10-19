@@ -1,4 +1,4 @@
-import type { CareAction, StatKey, TaskId, TimeSlot } from '@bamboo/game-kit';
+import type { CareAction, ClothingSlot, RoomSlot, StatKey, TaskId, TimeSlot } from '@bamboo/game-kit';
 import type { MessageKey } from '@bamboo/i18n';
 
 /**
@@ -46,4 +46,19 @@ export const SLOT_LABEL_KEYS: Record<TimeSlot, MessageKey> = {
   morning: 'time.morning',
   noon: 'time.noon',
   evening: 'time.evening',
+};
+export const CLOTHING_SLOT_KEYS: Record<ClothingSlot, MessageKey> = {
+  hat: 'slot.hat',
+  bib: 'slot.bib',
+  outfit: 'slot.outfit',
+  backpack: 'slot.backpack',
+  shoes: 'slot.shoes',
+};
+
+export const ROOM_SLOT_KEYS: Record<RoomSlot, MessageKey> = {
+  wallpaper: 'slot.wallpaper',
+  bed: 'slot.bed',
+  shelf: 'slot.shelf',
+  toyCorner: 'slot.toyCorner',
+  rug: 'slot.rug',
 };

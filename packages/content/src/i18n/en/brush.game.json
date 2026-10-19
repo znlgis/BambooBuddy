@@ -1,0 +1,58 @@
+{
+  "intro": "Let's brush Bamboo's teeth!",
+  "done": "Sparkling clean — Bamboo is smiling!",
+  "retry": "Slowly now, try again.",
+  "levelScript": {
+    "room": "bathroom",
+    "tool": "brush",
+    "rubs": 2,
+    "spots": [
+      {
+        "id": "g1",
+        "x": 0.24,
+        "y": 0.38,
+        "size": 0.9,
+        "kind": "germ"
+      },
+      {
+        "id": "g2",
+        "x": 0.5,
+        "y": 0.32,
+        "size": 1.1,
+        "kind": "germ"
+      },
+      {
+        "id": "g3",
+        "x": 0.76,
+        "y": 0.4,
+        "size": 0.9,
+        "kind": "germ"
+      },
+      {
+        "id": "g4",
+        "x": 0.3,
+        "y": 0.62,
+        "size": 0.8,
+        "kind": "germ"
+      },
+      {
+        "id": "g5",
+        "x": 0.56,
+        "y": 0.66,
+        "size": 1,
+        "kind": "germ"
+      },
+      {
+        "id": "g6",
+        "x": 0.78,
+        "y": 0.6,
+        "size": 0.85,
+        "kind": "germ"
+      }
+    ],
+    "finish": {
+      "kind": "rinse",
+      "taps": 5
+    }
+  }
+}

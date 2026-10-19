@@ -1,14 +1,20 @@
-# 熊猫宝宝的一天 · BambooBuddy
+# 熊猫宝宝的一天 · Bamboo Buddy
 
-> 面向 4–8 岁儿童的轻量日常生活养成游戏。孩子照顾卡通大熊猫「竹竹」，在吃饭、刷牙、洗手、穿衣、洗澡、睡觉、整理、运动、情绪、学习中完成一件件小事，竹竹因此开心长大。
+> 面向 4–8 岁儿童的轻量日常生活养成游戏，中英文双语。孩子照顾卡通大熊猫「竹竹 / Bamboo」，在吃饭、刷牙、洗手、穿衣、洗澡、睡觉、整理、运动、情绪、学习中完成一件件小事，竹竹因此开心长大。
+>
+> 英文名 **Bamboo Buddy**，副标题 **A Panda’s Day**，熊猫角色名 **Bamboo**（中文仍叫「竹竹」）。
 
 技术选型参考同目录的 CHAGS（中国历史典故游戏合集）：**H5 优先、Phaser 4 + Vue 3.5 双栈、pnpm workspace、内容 JSON + zod、纯逻辑与渲染分离、本地优先、一条命令验收**。本仓库是这套选型在「儿童日常养成」场景下的完整落地。
 
 ### 界面一览（程序化绘制，无位图资源）
 
-| 小屋 | 任务 | 刷牙 |
+| 小屋（中文） | 任务（中文） | 刷牙（中文） |
 |---|---|---|
 | ![小屋](docs/screenshots/home.png) | ![任务](docs/screenshots/tasks.png) | ![刷牙](docs/screenshots/brush.png) |
+
+| Home (English) | Tasks (English) | Mealtime (English) |
+|---|---|---|
+| ![Home](docs/screenshots/en-home.png) | ![Tasks](docs/screenshots/en-tasks.png) | ![Mealtime](docs/screenshots/en-feed.png) |
 
 | 整理 | 情绪 | |
 |---|---|---|
@@ -59,6 +65,7 @@ pnpm e2e          # Playwright：10 个玩法 autoplay 全通关 + 真实操作 
 | 日记与图鉴 | `diary.ts` + `apps/site/src/views/DiaryView.vue` | 自动生成「竹竹的一天」：图标 + 语音回顾；七个最近日子 + 贴纸册 |
 | 家长页 | `views/ParentView.vue` | 安全边界、最近七天记录、本周练习过的习惯、声音开关、长按清档 |
 | 情感设计 | 全局 | 竹竹叫玩家「小伙伴」；做对鼓掌冒星星；做错只说"再试一次"，无失败音效；每天固定的亲近动作 |
+| 中英文双语 | `packages/i18n` + `packages/content/src/i18n/en` | 界面文案、任务标题/习惯/日记、玩法语音与关卡文案全部双语；`?lang=en` 或头部语言按钮切换，选择记在 `localStorage`；英文文案是懒加载 chunk，中文用户不下载 |
 
 ### 十个玩法与八个模板
 
@@ -179,8 +186,8 @@ export default defineGame({
 
 ### 最近一次验收
 
-- `pnpm verify`：typecheck / lint / **78 个单测** / content:check / build / size 全绿（约 3.3 秒）。
-- `pnpm e2e`：**18 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过），覆盖 10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长锁与清档、刷新后进度保留。
+- `pnpm verify`：typecheck / lint / **86 个单测** / content:check（中英各 10 条 + 关卡脚本 + 零漏翻）/ build / size 全绿。
+- `pnpm e2e`：**20 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长锁与清档、刷新后进度保留、中英文切换与英文玩法。
 - `pnpm e2e:dist`：生产产物 **2 passed**——首屏不下载任何重 chunk、10 个玩法各自懒加载、Phaser 只在首个玩法时加载。
 
 ---
@@ -189,11 +196,10 @@ export default defineGame({
 
 **沿用**：Phaser 4 + Vue 3.5 双栈、workspace 分包、内容 JSON + zod、GameModule/GameContext 契约、逻辑与渲染分离、调试开关（autoplay / instant）、体积门禁、无后端、本地优先、儿童安全规范。
 
-**有意的差异**：本作是日常习惯养成，不要求"听完故事才能玩"——语音引导播放的同时就可以动手（4–8 岁的日常模仿需要即时反馈）；没有间隔重复复习（核心指标是"今天把好习惯做了一遍"）；内容只有中文。
+**有意的差异**：本作是日常习惯养成，不要求"听完故事才能玩"——语音引导播放的同时就可以动手（4–8 岁的日常模仿需要即时反馈）；没有间隔重复复习（核心指标是"今天把好习惯做了一遍"）。双语是本轮补上的能力：界面、内容、语音三层一起切，游戏代码不知道语言的存在。
 
 **主动不做**：
 
-- 中英双语（目标用户是 4–8 岁中文儿童；i18n 包保留键表结构，将来加语言不用改游戏契约）；
 - 到期复习 / 间隔重复；
 - 账号、云存档、排行榜、多人、内购、广告、CMS、PWA（后续可按 `PlatformServices` 路径逐项加）；
 - 抽卡 / 限定皮肤（装扮全部由游戏内奖励解锁）。
@@ -202,7 +208,7 @@ export default defineGame({
 
 ## 8. 已知限制
 
-- 语音使用浏览器 / WebView 的 `SpeechSynthesis`；无语音包或静音时游戏照常可玩，只是没有旁白。
+- 语音使用浏览器 / WebView 的 `SpeechSynthesis`；按语言挑嗓音（zh-CN / en-US），无语音包或静音时游戏照常可玩，只是没有旁白。
 - 存档在 IndexedDB；无痕模式或存储被清理后会回到初始状态（外壳会提示"这次可能没存上"）。
 - 美术全部为程序化几何绘制与 SVG，没有位图角色；风格统一但细节有限。
 - 家长页只展示本机记录，不含跨设备统计。

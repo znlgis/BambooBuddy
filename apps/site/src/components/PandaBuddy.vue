@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ClothingSlot } from '@bamboo/game-kit';
 import { computed } from 'vue';
+import { useI18n } from '../shell/useI18n';
 import { PANDA_COLORS, clothingColor, faceFor, hatKind } from '../logic/pandaLook';
 import type { PandaMood } from '../logic/pandaLook';
 
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<Props>(), {
   equipped: () => ({}),
 });
 
+const { t } = useI18n();
 const face = computed(() => faceFor(props.mood));
 const hat = computed(() => hatKind(props.equipped.hat));
 const hatFill = computed(() => clothingColor(props.equipped.hat));
@@ -40,7 +42,7 @@ const scaleStyle = computed(() => ({ transform: 'scale(' + props.stageScale + ')
     class="panda-buddy"
     :style="scaleStyle"
     role="img"
-    aria-label="竹竹"
+    :aria-label="t('pet.name')"
   >
     <svg viewBox="0 0 260 300" class="h-full w-full" aria-hidden="true">
       <g class="panda-breathe">

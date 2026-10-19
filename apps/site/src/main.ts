@@ -1,6 +1,9 @@
+import { ensureSummaries } from '@bamboo/content';
+import { ensureMessages } from '@bamboo/i18n';
 import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import App from './App.vue';
+import { applyLocaleDocument, initialLocale, persistLocale } from './logic/locale';
 import { initDebugBridge } from './shell/debug';
 import './style.css';
 
@@ -10,4 +13,13 @@ import './style.css';
  */
 initDebugBridge();
 
-createApp(App).use(createPinia()).mount('#app');
+/**
+ * 英文内容补丁是独立 chunk：?lang=en 或上次选过英文时，要在首屏之前就位，
+ * 否则会先闪一屏中文标题。中文用户不下载这份 chunk。
+ */
+const initial = initialLocale();
+void Promise.all([ensureSummaries(initial.locale), ensureMessages(initial.locale)]).finally(() => {
+  if (initial.fromUrl) persistLocale(initial.locale);
+  applyLocaleDocument(initial.locale);
+  createApp(App).use(createPinia()).mount('#app');
+});

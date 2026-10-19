@@ -1,0 +1,58 @@
+{
+  "intro": "Wash your hands before eating — make some bubbles!",
+  "done": "Little hands, sweet and clean!",
+  "retry": "Rub a little more, then rinse.",
+  "levelScript": {
+    "room": "sink",
+    "tool": "hands",
+    "rubs": 2,
+    "spots": [
+      {
+        "id": "b1",
+        "x": 0.22,
+        "y": 0.3,
+        "size": 1,
+        "kind": "foam"
+      },
+      {
+        "id": "b2",
+        "x": 0.48,
+        "y": 0.24,
+        "size": 0.9,
+        "kind": "foam"
+      },
+      {
+        "id": "b3",
+        "x": 0.74,
+        "y": 0.3,
+        "size": 1.1,
+        "kind": "foam"
+      },
+      {
+        "id": "b4",
+        "x": 0.3,
+        "y": 0.6,
+        "size": 0.85,
+        "kind": "foam"
+      },
+      {
+        "id": "b5",
+        "x": 0.56,
+        "y": 0.66,
+        "size": 1,
+        "kind": "foam"
+      },
+      {
+        "id": "b6",
+        "x": 0.78,
+        "y": 0.58,
+        "size": 0.9,
+        "kind": "foam"
+      }
+    ],
+    "finish": {
+      "kind": "rinse",
+      "taps": 6
+    }
+  }
+}

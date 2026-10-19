@@ -8,22 +8,26 @@ export interface IntimacyStep {
   /** 达到这一档所需的亲密度 */
   at: number;
   name: string;
+  nameEn: string;
   /** 这一档解锁的小动作（小屋里的竹竹会做） */
   gesture: string;
+  gestureEn: string;
 }
 
 export const INTIMACY_STEPS: readonly IntimacyStep[] = [
-  { at: 0, name: '初次见面', gesture: '招手' },
-  { at: 5, name: '好朋友', gesture: '害羞捂脸' },
-  { at: 12, name: '贴心伙伴', gesture: '转圈圈' },
-  { at: 22, name: '形影不离', gesture: '击掌跳' },
-  { at: 35, name: '最好的朋友', gesture: '比心' },
+  { at: 0, name: '初次见面', nameEn: 'Just met', gesture: '招手', gestureEn: 'A little wave' },
+  { at: 5, name: '好朋友', nameEn: 'Good friends', gesture: '害羞捂脸', gestureEn: 'Shy paws' },
+  { at: 12, name: '贴心伙伴', nameEn: 'Close buddies', gesture: '转圈圈', gestureEn: 'A happy spin' },
+  { at: 22, name: '形影不离', nameEn: 'Inseparable', gesture: '击掌跳', gestureEn: 'High-five jump' },
+  { at: 35, name: '最好的朋友', nameEn: 'Best friends', gesture: '比心', gestureEn: 'Heart hands' },
 ];
 
 export interface IntimacyLevel {
   level: number;
   name: string;
+  nameEn: string;
   gesture: string;
+  gestureEn: string;
   /** 下一档还要多少；到顶为 null */
   nextAt: number | null;
 }
@@ -36,7 +40,14 @@ export function intimacyLevel(points: number): IntimacyLevel {
   }
   const current = INTIMACY_STEPS[index]!;
   const next = INTIMACY_STEPS[index + 1];
-  return { level: index + 1, name: current.name, gesture: current.gesture, nextAt: next ? next.at : null };
+  return {
+    level: index + 1,
+    name: current.name,
+    nameEn: current.nameEn,
+    gesture: current.gesture,
+    gestureEn: current.gestureEn,
+    nextAt: next ? next.at : null,
+  };
 }
 
 /** 今天这个动作还能不能做 */

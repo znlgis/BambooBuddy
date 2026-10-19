@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { getTaskSummary } from '@bamboo/content';
-import { t } from '@bamboo/i18n';
 import { weekCompletedCount } from '@bamboo/progress';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import sitePkg from '../../package.json';
 import { navigate } from '../router';
 import { platform } from '../shell/platform';
+import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 import { useSettings } from '../stores/settings';
 
@@ -20,6 +20,7 @@ import { useSettings } from '../stores/settings';
  */
 const progress = useProgress();
 const settings = useSettings();
+const { t, locale } = useI18n();
 
 const version = (sitePkg as { version?: string }).version ?? '0.0.0';
 
@@ -31,7 +32,7 @@ const habits = computed(() => {
   const out: string[] = [];
   for (const day of progress.weekSummary) {
     for (const id of day.completed) {
-      const task = getTaskSummary(id);
+      const task = getTaskSummary(id, locale.current);
       if (task && !seen.has(task.habit)) {
         seen.add(task.habit);
         out.push(task.habit);

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { TaskId } from '@bamboo/content';
 import type { GameEventMap, GameModule, Stars } from '@bamboo/game-kit';
-import { t } from '@bamboo/i18n';
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { navigate } from '../router';
 import { registry } from '../registry';
 import { createGameContext } from '../shell/createGameContext';
 import { recordDebugError } from '../shell/debug';
 import { platform } from '../shell/platform';
+import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 import { useSettings } from '../stores/settings';
 
@@ -32,6 +32,7 @@ const toast = ref<string[] | null>(null);
 
 const progress = useProgress();
 const settings = useSettings();
+const { t, locale } = useI18n();
 
 let disposed = false;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -125,6 +126,7 @@ async function start(): Promise<void> {
       host.value,
       { onExit: handleExit, onEvent: handleEvent },
       progress.completedBefore(props.taskId),
+      locale.current,
     );
     if (disposed || !host.value) return;
     await loaded.mount(context);

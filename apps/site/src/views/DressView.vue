@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { t } from '@bamboo/i18n';
 import type { ClothingSlot, RoomSlot } from '@bamboo/game-kit';
 import { CLOTHING_SLOTS } from '@bamboo/progress';
 import type { CatalogItem } from '@bamboo/progress';
@@ -8,6 +7,7 @@ import PandaBuddy from '../components/PandaBuddy.vue';
 import RoomScene from '../components/RoomScene.vue';
 import { dressGroups } from '../logic/dressGroups';
 import type { DressTab } from '../logic/dressGroups';
+import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 
 /**
@@ -16,9 +16,13 @@ import { useProgress } from '../stores/progress';
  * 孩子能自己看懂"再玩几天就能得到"。
  */
 const progress = useProgress();
+const { t, locale } = useI18n();
 
 const tab = ref<DressTab>('clothes');
-const groups = computed(() => dressGroups(tab.value));
+const groups = computed(() => dressGroups(tab.value, t));
+const stageName = computed(() =>
+  locale.current === 'en' ? progress.stage.nameEn : progress.stage.name,
+);
 const toast = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -29,6 +33,10 @@ function flash(message: string): void {
     toast.value = null;
     toastTimer = null;
   }, 2600);
+}
+
+function itemName(item: CatalogItem): string {
+  return locale.current === 'en' ? item.nameEn : item.name;
 }
 
 function isClothing(item: CatalogItem): boolean {
@@ -84,7 +92,7 @@ onBeforeUnmount(() => {
     <div class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-card px-4 py-2 text-base">
       <span class="text-ink">🎋 {{ t('home.shoots', { n: progress.pet.shoots }) }}</span>
       <span class="text-ink">🧩 {{ t('home.fragments', { n: progress.pet.fragments }) }}</span>
-      <span class="text-inksoft">{{ progress.stage.name }}</span>
+      <span class="text-inksoft">{{ stageName }}</span>
     </div>
 
     <!-- 试穿预览：小窝背景 + 穿上装的竹竹，换什么都能立刻看见 -->
@@ -144,7 +152,7 @@ onBeforeUnmount(() => {
         >
           <div class="flex items-center gap-2">
             <span class="text-2xl" aria-hidden="true">{{ item.emoji }}</span>
-            <span class="min-w-0 flex-1 truncate text-base font-bold text-ink">{{ item.name }}</span>
+            <span class="min-w-0 flex-1 text-base font-bold leading-tight text-ink">{{ itemName(item) }}</span>
           </div>
           <p class="mt-1 flex flex-wrap gap-x-2 text-base text-inksoft">
             <span v-if="item.costShoots > 0">🎋 {{ t('dress.costShoots', { n: item.costShoots }) }}</span>

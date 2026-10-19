@@ -2,6 +2,8 @@ export interface GrowthStage {
   /** 1–4：内容里的 unlockLevel 用的就是这个序号 */
   id: 1 | 2 | 3 | 4;
   name: string;
+  /** 英文界面显示名（与 name 一一对应） */
+  nameEn: string;
   /** 达到这一阶段所需的累计成长值 */
   atXp: number;
   /** 小屋里的竹竹画多大（视觉上"长大"最直观） */
@@ -13,10 +15,10 @@ export interface GrowthStage {
  * 一次任务约 10–16 成长值，所以第四个阶段大约是二十多次陪伴之后 —— 不逼孩子肝。
  */
 export const STAGES: readonly GrowthStage[] = [
-  { id: 1, name: '熊猫幼崽', atXp: 0, scale: 0.82 },
-  { id: 2, name: '小熊猫', atXp: 60, scale: 0.92 },
-  { id: 3, name: '大熊猫', atXp: 160, scale: 1 },
-  { id: 4, name: '竹竹的小屋', atXp: 300, scale: 1.08 },
+  { id: 1, name: '熊猫幼崽', nameEn: 'Panda Cub', atXp: 0, scale: 0.82 },
+  { id: 2, name: '小熊猫', nameEn: 'Little Panda', atXp: 60, scale: 0.92 },
+  { id: 3, name: '大熊猫', nameEn: 'Giant Panda', atXp: 160, scale: 1 },
+  { id: 4, name: '竹竹的小屋', nameEn: "Bamboo's Home", atXp: 300, scale: 1.08 },
 ];
 
 export function stageForXp(xp: number): GrowthStage {

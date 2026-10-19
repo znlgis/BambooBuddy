@@ -28,7 +28,7 @@ export function createPlaceholderScene(ctx: GameContext): Phaser.Types.Scenes.Sc
           wordWrap: { width: 490, useAdvancedWrap: true },
         })
         .setOrigin(0.5);
-      this.addButton(this.W / 2, 1010, '开始', () => {
+      this.addButton(this.W / 2, 1010, this.tr('game.start'), () => {
         this.noteCorrect();
         this.finishTask();
       });

@@ -16,6 +16,11 @@
     "e2e:dist": "pnpm build && playwright test --config playwright.preview.config.ts",
     "size": "node scripts/check-size.mjs",
       "phaser:trim": "node scripts/build-phaser-trim.mjs",
+      "icons": "python scripts/make-icons.py",
+      "keystore": "node scripts/make-keystore.mjs",
+      "dist:win": "pnpm --filter @bamboo/site build && pnpm --filter @bamboo/desktop build",
+      "dist:apk": "pnpm --filter @bamboo/site build && pnpm --filter @bamboo/mobile build",
+      "pack:check": "node scripts/check-packaging.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {

@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <!-- 中文系统显示中文名；英文系统走 values-en -->
+    <string name="app_name">熊猫宝宝的一天</string>
+    <string name="title_activity_main">熊猫宝宝的一天</string>
+    <string name="package_name">com.bamboo.buddy</string>
+    <string name="custom_url_scheme">com.bamboo.buddy</string>
+</resources>

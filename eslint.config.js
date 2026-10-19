@@ -11,7 +11,12 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       '.scratch/**',
-      // 第三方裁剪产物：不是我们的代码，lint 没有意义
+      // 原生壳与生成产物：不是我们的代码，lint 没有意义
+      'apps/desktop/src-tauri/target/**',
+      'apps/desktop/src-tauri/gen/**',
+      'apps/mobile/android/**',
+      'apps/mobile/resources/**',
+      // 第三方裁剪产物
       'packages/phaser-kit/vendor/**',
     ],
   },

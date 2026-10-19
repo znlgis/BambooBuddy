@@ -34,9 +34,26 @@ pnpm preview      # http://127.0.0.1:5191
 验收（提交前必须全绿）：
 
 ```bash
-pnpm verify       # typecheck → lint → test → content:check → build → size
-pnpm e2e          # Playwright：10 个玩法 autoplay 全通关 + 真实操作 + 家长页
+pnpm verify       # typecheck → lint → test → content:check → pack:check → build → size
+pnpm e2e          # Playwright：10 个玩法 autoplay 全通关 + 真实操作 + 家长页 + 双语
 ```
+
+### 打包成 EXE / APK（含 GitHub Actions 自动发布）
+
+```bash
+pnpm dist:win     # Windows 便携 exe（Tauri 2，双击即玩）
+pnpm dist:apk     # 安卓 apk（Capacitor 8）
+pnpm pack:check   # 不装 Rust/JDK/SDK 也能体检打包配置（已接入 pnpm verify）
+```
+
+推一个 tag 就会由 GitHub Actions 构建两个平台并挂到 Release：
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+也可以在 Actions → **Release** → **Run workflow** 手动只出产物、不发版。
+签名、图标、真机构建前置条件与排障见 [打包与分发](docs/打包与分发.md)。
 
 ---
 
@@ -98,6 +115,7 @@ pnpm e2e          # Playwright：10 个玩法 autoplay 全通关 + 真实操作 
 | 存储 | **IndexedDB（本地优先）+ 可替换接口** | 无后端、无账号、不采集儿童信息；存档只在本机 |
 | 音频 | **WebAudio 合成 + 浏览器 TTS** | 零音频文件先把"听"通道跑通；换成真人配音只改 `platform` 一个实现 |
 | 测试 | **Vitest + vue-tsc + Playwright + 内容校验 + 体积门禁** | `pnpm verify` 一条命令全绿才算完成 |
+| 打包 | **Tauri 2（EXE）+ Capacitor 8（APK）** | 同一份 `apps/site/dist` 喂给两个壳；Tauri 走系统 WebView2，体积只有几 MB |
 | 后端 | **无** | 纯静态站点；家长报告只基于本机记录 |
 
 ### 三条架构铁律
@@ -113,6 +131,8 @@ pnpm e2e          # Playwright：10 个玩法 autoplay 全通关 + 真实操作 
 ```text
 BambooBuddy/
 ├─ apps/site/                 # Vue 3.5 外壳（小屋 / 任务 / 装扮 / 日记 / 家长 / 游戏宿主）
+├─ apps/desktop/              # Tauri 2 桌面壳（便携 exe）
+├─ apps/mobile/               # Capacitor 8 安卓壳（apk + 已入库的 android 工程）
 ├─ packages/
 │  ├─ game-kit/               # GameModule / GameContext / 事件 / 存档类型（无 Phaser）
 │  ├─ content/                # 10 条任务的摘要 JSON + 详情 JSON + loadTask() 动态加载
@@ -123,7 +143,7 @@ BambooBuddy/
 │  └─ templates/              # 8 个玩法模板：*.logic.ts（判定）+ *.ts（场景）+ 关卡 schema
 ├─ games/daily/               # 10 个玩法的入口（一个任务 = 一个动态 import 的子路径）
 ├─ e2e/                       # Playwright：冒烟、真实操作、家长页、生产产物懒加载
-├─ scripts/                   # verify 执行器与体积门禁
+├─ scripts/                   # verify / 体积门禁 / 图标 / APK / keystore / 打包体检
 └─ docs/技术方案.md            # 更完整的架构决策与踩坑记录
 ```
 
@@ -212,6 +232,7 @@ export default defineGame({
 - 存档在 IndexedDB；无痕模式或存储被清理后会回到初始状态（外壳会提示"这次可能没存上"）。
 - 美术全部为程序化几何绘制与 SVG，没有位图角色；风格统一但细节有限。
 - 家长页只展示本机记录，不含跨设备统计。
+- 安卓壳的旁白走系统 TTS（WebView 没有 Web Speech API）；设备没装语音包时静默降级，只保留音效。
 
 ---
 

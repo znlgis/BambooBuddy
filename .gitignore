@@ -6,3 +6,20 @@ test-results/
 .scratch/
 *.log
 .DS_Store
+
+# 打包产物与本地工具链文件
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/local.properties
+apps/mobile/android/keystore.properties
+apps/mobile/android/*.keystore
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/app/src/main/assets/capacitor.config.json
+apps/mobile/android/app/src/main/assets/capacitor.plugins.json
+apps/mobile/android/app/src/main/res/xml/config.xml
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/capacitor-cordova-android-plugins/
+out/

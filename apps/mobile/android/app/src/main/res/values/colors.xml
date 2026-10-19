@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与站点同色：米白纸色 + 竹绿强调 + 深棕文字 -->
+    <color name="colorPrimary">#faf3e7</color>
+    <color name="colorPrimaryDark">#4a3b2f</color>
+    <color name="colorAccent">#7aa05c</color>
+    <color name="splashBackground">#faf3e7</color>
+</resources>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { navigate, useRoute } from './router';
+import { installBackButtonHandler } from './shell/backButton';
 import { platform } from './shell/platform';
 import { useI18n } from './shell/useI18n';
 import { useProgress } from './stores/progress';
@@ -79,6 +80,8 @@ let offResume: (() => void) | null = null;
 
 onMounted(() => {
   settings.init();
+  // 安卓实体返回键：先回小屋，再按才退出应用（浏览器里是空操作）
+  installBackButtonHandler(route);
   void progress.init();
   // iOS / 微信：音频必须由一次用户手势解锁（只解一次，之后不再监听）
   window.addEventListener('pointerdown', unlockAudio, { once: true });

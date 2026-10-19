@@ -21,6 +21,7 @@ const STEPS = [
   { name: 'lint', command: 'pnpm lint' },
   { name: 'test', command: 'pnpm test' },
   { name: 'content:check', command: 'pnpm content:check' },
+  { name: 'pack:check', command: 'pnpm pack:check' },
   { name: 'build', command: 'pnpm build' },
 ];
 

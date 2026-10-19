@@ -11,6 +11,7 @@ import type {
   SaveData,
 } from '@bamboo/game-kit';
 import { speechLang } from '@bamboo/game-kit';
+import { nativeTextToSpeech } from './runtime';
 import { emptySave, migrate } from '@bamboo/progress';
 
 const DB_NAME = 'bamboobuddy';
@@ -193,8 +194,28 @@ export function createWebAudioBus(): AudioBus {
       tone(freq, durationMs / 1000, 0, 'triangle', 0.15);
     },
     speak(text: string, locale: Locale): SpeechHandle {
-      // 静音 / 没有语音 API：都走 unavailable，界面绝不会卡在"正在听"
-      if (muted || typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') {
+      if (muted) return { done: Promise.resolve('unavailable') };
+
+      // ① 原生 TTS（安卓壳）：Android WebView 没有 Web Speech API，只能走系统语音引擎
+      const native = nativeTextToSpeech();
+      if (native) {
+        const done = native
+          .speak({
+            text,
+            lang: speechLang(locale),
+            rate: locale === 'en' ? 0.95 : 0.92,
+            pitch: 1.08,
+            // 与 Web Speech 口径一致：听得清，又不会在孩子耳边炸响
+            volume: 0.8,
+          })
+          .then((): SpeechOutcome => 'ended')
+          // 设备没装语音包时失败：静默降级，绝不把界面钉在"正在听"
+          .catch((): SpeechOutcome => 'unavailable');
+        return { done };
+      }
+
+      // ② 没有语音 API 的浏览器：走 unavailable
+      if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') {
         return { done: Promise.resolve('unavailable') };
       }
       speechSynthesis.cancel();
@@ -222,6 +243,11 @@ export function createWebAudioBus(): AudioBus {
       return { done };
     },
     stopSpeech(): void {
+      const native = nativeTextToSpeech();
+      if (native) {
+        void native.stop().catch(() => undefined);
+        return;
+      }
       if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     },
     setMuted(next: boolean): void {

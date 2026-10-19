@@ -1,0 +1,370 @@
+name: Release
+
+# 打 tag 即发布：构建 Windows 便携 exe 与安卓 apk，挂到 GitHub Release。
+# 也可以在 Actions 页面手动 Run workflow：只出产物、不发 Release（用来验证流程）。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      require_signed_apk:
+        description: '没有签名 Secrets 就直接失败（默认：用 debug 密钥签一个能装到手机上的 APK）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# 同一条 tag 的发布不并发：产物一样，抢着发只会互相覆盖
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  # 产物体积门禁：exe / apk 都应在几 MB 级别；超过 10MB 多半是误打进调试符号或整个资源目录
+  ARTIFACT_MAX_BYTES: 10485760
+
+jobs:
+  # ---------- 解析版本号 ----------
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      code: ${{ steps.v.outputs.code }}
+    steps:
+      - id: v
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          CORE="${VERSION%%-*}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CORE"
+          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+          [[ "$MAJOR" =~ ^[0-9]+$ ]] || MAJOR=0
+          [[ "$MINOR" =~ ^[0-9]+$ ]] || MINOR=0
+          [[ "$PATCH" =~ ^[0-9]+$ ]] || PATCH=0
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          # 安卓要求 versionCode >= 1；手动触发与 v0.0.0 都会算出 0
+          if [ "$CODE" -lt 1 ]; then CODE=1; fi
+          {
+            echo "version=$VERSION"
+            echo "code=$CODE"
+          } >> "$GITHUB_OUTPUT"
+          echo "版本：$VERSION（versionCode $CODE）"
+
+  # ---------- 站点产物 + 质量门禁（只构建一次，两个平台共用） ----------
+  web:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: 质量门禁（类型 / lint / 单测 / 内容校验 / 打包配置）
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm content:check
+          pnpm pack:check
+
+      - name: 构建站点
+        run: pnpm --filter @bamboo/site build
+
+      - name: 体积守卫
+        run: pnpm size
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/site/dist
+          retention-days: 1
+
+  # ---------- 端到端门禁：玩法被改坏了不许发版 ----------
+  e2e:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: 缓存 Playwright 浏览器
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: 安装浏览器
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: 端到端（开发服务器）
+        run: pnpm e2e
+
+      - name: 端到端（生产产物）
+        if: '!cancelled()'
+        run: pnpm e2e:dist
+
+      - name: 失败时保留截图与轨迹
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-playwright-results
+          path: test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------- Windows 便携 exe（Tauri 2） ----------
+  windows:
+    needs: [version, web]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/site/dist
+      - name: 校验站点产物就位
+        shell: pwsh
+        run: |
+          if (-not (Test-Path apps/site/dist/index.html)) { throw "站点产物没就位：apps/site/dist/index.html 不存在" }
+          (Get-ChildItem apps/site/dist -Recurse -File | Measure-Object).Count | ForEach-Object { "站点文件数：$_" }
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: 注入版本号
+        shell: pwsh
+        run: |
+          node -e "const fs=require('fs');const p='apps/desktop/src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(p,'utf8'));c.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(c,null,2));" "${{ needs.version.outputs.version }}"
+
+      - name: 构建便携 exe
+        working-directory: apps/desktop
+        run: pnpm exec tauri build --no-bundle
+
+      - name: 收集产物（含体积门禁）
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          $exe = "out/BambooBuddy-${{ needs.version.outputs.version }}-windows-x64-portable.exe"
+          Copy-Item apps/desktop/src-tauri/target/release/bamboo-buddy.exe $exe
+          Get-ChildItem out | ForEach-Object { "{0:N2} MB  {1}" -f ($_.Length/1MB), $_.Name }
+          $size = (Get-Item $exe).Length
+          if ($size -gt [long]$env:ARTIFACT_MAX_BYTES) {
+            throw ("exe 体积超标：{0:N2} MB > {1:N2} MB" -f ($size/1MB), ([long]$env:ARTIFACT_MAX_BYTES/1MB))
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: out/*.exe
+          retention-days: 7
+
+  # ---------- 安卓 apk（Capacitor 8） ----------
+  android:
+    needs: [version, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      signature: ${{ steps.sign.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # Gradle 8.14 不支持 JDK 25，必须用 17–21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+
+      # ubuntu runner 预装了 Android SDK；自己定位，避免 setup-android 去装已移除的 tools 包
+      - name: 定位 Android SDK
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "::error::runner 上找不到 Android SDK（试过 $SDK）"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          for dir in "$SDK"/cmdline-tools/*/bin; do
+            [ -d "$dir" ] && echo "$dir" >> "$GITHUB_PATH"
+          done
+
+      - name: 安装 Android SDK 组件
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          ls "$ANDROID_SDK_ROOT/platforms"
+          ls "$ANDROID_SDK_ROOT/build-tools"
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/site/dist
+      - name: 校验站点产物就位
+        run: test -f apps/site/dist/index.html || { echo "站点产物没就位"; exit 1; }
+
+      - name: 写入签名材料
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd apps/mobile/android
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > bamboo-release.keystore
+            {
+              echo "storeFile=bamboo-release.keystore"
+              echo "storePassword=$STORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > keystore.properties
+            echo "kind=release" >> "$GITHUB_OUTPUT"
+            echo "已配置 Release 签名（正式密钥）"
+          elif [ "${{ inputs.require_signed_apk }}" = "true" ]; then
+            echo "::error::勾选了 require_signed_apk，但没有配置 ANDROID_KEYSTORE_* Secrets。"
+            exit 1
+          else
+            echo "kind=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::没有配置签名 Secrets —— 本次用 debug 密钥签名。APK 可以直接装；若手机上已装旧版提示签名不一致，先卸载旧版再装（会清掉本地存档）。"
+          fi
+
+      - name: 构建 APK
+        working-directory: apps/mobile
+        env:
+          BAMBOO_VERSION_NAME: ${{ needs.version.outputs.version }}
+          BAMBOO_VERSION_CODE: ${{ needs.version.outputs.code }}
+        run: |
+          pnpm exec cap sync android
+          cd android
+          # 仓库在 Windows 上提交，git 可能没保留 gradlew 的可执行位
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: 校验签名
+        run: |
+          set -euo pipefail
+          APK=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner"
+          if ! CERTS="$("$APKSIGNER" verify --print-certs "$APK")"; then
+            echo "::error::apksigner 校验失败：$APK"
+            exit 1
+          fi
+          echo "$CERTS" | head -4
+          if echo "$CERTS" | grep -q 'CN=Android Debug'; then
+            if [ "${{ steps.sign.outputs.kind }}" = "release" ]; then
+              echo "::error::配了正式签名 Secrets，产出的却是 debug 签名 —— 检查 keystore.properties 与 build.gradle"
+              exit 1
+            fi
+            echo "::notice::这是 debug 签名的 APK：可以直接装到手机上，但不要拿去分发"
+          else
+            echo "::notice::已用正式密钥签名，可以直接覆盖安装旧版本"
+          fi
+
+      - name: 收集产物（含体积门禁）
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          apk="out/BambooBuddy-${{ needs.version.outputs.version }}-android.apk"
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk "$apk"
+          ls -lh out
+          size=$(stat -c%s "$apk")
+          echo "APK 体积：$((size / 1024 / 1024)) MB（上限 $((ARTIFACT_MAX_BYTES / 1024 / 1024)) MB）"
+          if [ "$size" -gt "$ARTIFACT_MAX_BYTES" ]; then
+            echo "::error::APK 体积超标"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: out/*.apk
+          retention-days: 7
+
+  # ---------- 发 Release ----------
+  release:
+    needs: [version, web, windows, android, e2e]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 整理发布文件
+        run: |
+          mkdir -p files
+          cp artifacts/windows-exe/*.exe files/
+          cp artifacts/android-apk/*.apk files/
+          ls -lh files
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: files/*
+          generate_release_notes: true
+          draft: false
+          body: |
+            ## 下载
+
+            | 平台 | 文件 | 说明 |
+            |---|---|---|
+            | Windows | BambooBuddy-${{ needs.version.outputs.version }}-windows-x64-portable.exe | 便携版，**双击即玩，无需安装**（首次运行可能有 SmartScreen 提示，选「更多信息 → 仍要运行」） |
+            | Android | BambooBuddy-${{ needs.version.outputs.version }}-android.apk | 直接安装（需在设置里允许「安装未知来源的应用」） |
+
+            版本 ${{ needs.version.outputs.version }} ｜ 内置中英文，可在应用内一键切换。
+
+            ${{ needs.android.outputs.signature == 'debug' && '⚠️ 本次 APK 用 **debug 密钥**签名（仓库没有配置签名 Secrets）：可以直接安装使用；若手机上已装过旧版且提示「签名不一致」，请先卸载旧版再装（卸载会清掉本地存档）。想要以后能直接覆盖安装、存档不丢：本地跑 pnpm keystore 生成密钥并配成 GitHub Secrets。' || '✅ 本次 APK 用**正式密钥**签名，可以直接覆盖安装旧版本。' }}
+
+      - name: 确认发布类型
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            gh release edit "${GITHUB_REF_NAME}" --prerelease
+          else
+            gh release edit "${GITHUB_REF_NAME}" --prerelease=false
+          fi

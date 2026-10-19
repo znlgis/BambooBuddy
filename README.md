@@ -55,6 +55,13 @@ git tag v0.2.0 && git push origin v0.2.0
 也可以在 Actions → **Release** → **Run workflow** 手动只出产物、不发版。
 签名、图标、真机构建前置条件与排障见 [打包与分发](docs/打包与分发.md)。
 
+**CI 实测产物（2026-10-19，运行 [39246799138](https://github.com/znlgis/BambooBuddy/actions/runs/39246799138)）**：
+
+| 平台 | 文件 | 体积 | 结果 |
+|---|---|---|---|
+| Windows | `BambooBuddy-<version>-windows-x64-portable.exe` | **3.27 MB** | 下载后本机双击可启动，标题「熊猫宝宝的一天 · Bamboo Buddy」 |
+| Android | `BambooBuddy-<version>-android.apk` | **4.69 MB** | debug 签名（未配 Secrets）；apksigner 校验通过，可直接安装 |
+
 ---
 
 ## 2. 产品范围（对应《熊猫宝宝的一天》方案）
@@ -206,9 +213,10 @@ export default defineGame({
 
 ### 最近一次验收
 
-- `pnpm verify`：typecheck / lint / **86 个单测** / content:check（中英各 10 条 + 关卡脚本 + 零漏翻）/ build / size 全绿。
+- `pnpm verify`：typecheck / lint / **91 个单测** / content:check（中英各 10 条 + 关卡脚本 + 零漏翻）/ **pack:check** / build / size 全绿。
 - `pnpm e2e`：**20 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长锁与清档、刷新后进度保留、中英文切换与英文玩法。
 - `pnpm e2e:dist`：生产产物 **2 passed**——首屏不下载任何重 chunk、10 个玩法各自懒加载、Phaser 只在首个玩法时加载。
+- GitHub Actions：**Release** 手动运行全绿（web / e2e / windows / android 四个 job），产出 EXE 3.27 MB、APK 4.69 MB；推 `v*` tag 会自动挂到 Release。
 
 ---
 

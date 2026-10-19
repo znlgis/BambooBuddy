@@ -16,7 +16,7 @@
     "e2e:dist": "pnpm build && playwright test --config playwright.preview.config.ts",
     "size": "node scripts/check-size.mjs",
       "phaser:trim": "node scripts/build-phaser-trim.mjs",
-      "icons": "python scripts/make-icons.py",
+      "icons": "python scripts/make-icons.py && pnpm --filter @bamboo/desktop exec tauri icon src-tauri/icon-source.png && pnpm --filter @bamboo/mobile exec capacitor-assets generate --android",
       "keystore": "node scripts/make-keystore.mjs",
       "dist:win": "pnpm --filter @bamboo/site build && pnpm --filter @bamboo/desktop build",
       "dist:apk": "pnpm --filter @bamboo/site build && pnpm --filter @bamboo/mobile build",

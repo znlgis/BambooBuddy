@@ -2,7 +2,17 @@ import Phaser from 'phaser';
 import type { ArcadeContext, SfxKey } from '@bamboo/game-kit';
 import { createTranslator } from '@bamboo/i18n';
 import type { MessageKey, MessageParams, Translator } from '@bamboo/i18n';
-import { CSS, THEME, pandaCheer, popIn, roundRect, shade, starPath, textStyle } from '@bamboo/phaser-kit';
+import {
+  CSS,
+  THEME,
+  pandaCheer,
+  popIn,
+  roundRect,
+  setContainerHitArea,
+  shade,
+  starPath,
+  textStyle,
+} from '@bamboo/phaser-kit';
 
 /** 逻辑分辨率与日常玩法一致（750×1334 竖屏），Scale.FIT 负责适配真机 */
 export const ARCADE_DESIGN = { width: 750, height: 1334 } as const;
@@ -153,11 +163,9 @@ export abstract class ArcadeScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     container.add([lip, face, text]);
-    container.setSize(w, h);
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      Phaser.Geom.Rectangle.Contains,
-    );
+    // 命中区用「左上角原点」的整颗按钮：Container 的 displayOrigin 会被命中测试再加一次，
+    // 传居中矩形会让可点区域缩到左上 1/4（点按钮中间时好时坏）。
+    setContainerHitArea(container, w, h);
     container.on('pointerdown', () => {
       if (opts.disabled === true) return;
       this.sfx('tap');

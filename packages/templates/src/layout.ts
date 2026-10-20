@@ -73,14 +73,15 @@ export const ORDER_LAYOUT = {
 } as const;
 
 /**
- * 完成卡片的两个出口（设计坐标，按钮 300×108）。
+ * 完成卡片的两个出口（设计坐标，按钮 270×108）。
  * 数值与 phaser-kit 的 BaseScene.showCompletionOverlay 保持一致 ——
  * 真实操作类 e2e 需要点「收下」才能离开这一局，而完成卡片是 Phaser 内绘制的，
  * 没有 DOM testid，所以坐标放在这个纯常量模块里给测试用。
+ * 两个按钮中心相距 300、自身宽 270：留 30px 间隙，视觉与命中区都不重叠。
  */
 export const COMPLETE_LAYOUT = {
-  accept: { x: 485, y: 1093 },
-  replay: { x: 265, y: 1093 },
+  accept: { x: 525, y: 1093 },
+  replay: { x: 225, y: 1093 },
 } as const;
 
 export const UI = {

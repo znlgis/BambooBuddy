@@ -10,6 +10,7 @@ import {
   events,
   moveDesign,
   toScreen,
+  waitEvent,
   waitEventPrefix,
   waitPlayClosed,
   waitTaskComplete,
@@ -83,7 +84,9 @@ test('刷牙：按住牙刷在牙齿区来回刷干净 6 处，再点冲水，ta
   const taps = level.finish?.taps ?? 0;
   expect(taps, '刷牙关卡应该要求冲水收尾').toBeGreaterThan(0);
   for (let i = 0; i < taps; i += 1) {
-    await clickDesign(page, SCRUB_LAYOUT.finish.x, SCRUB_LAYOUT.finish.y);
+    // 刻意不点正中心：孩子会按到按钮的右下部分。命中区必须覆盖整颗按钮，
+    // 而不是只有"中心点恰好落在命中区边界上"才算数。
+    await clickDesign(page, SCRUB_LAYOUT.finish.x + 120, SCRUB_LAYOUT.finish.y + 30);
     await page.waitForTimeout(120);
   }
 
@@ -136,4 +139,34 @@ test('睡觉：先点错一个只提示不结束，再按顺序点 4 个道具�
 
   await waitTaskComplete(page, 'sleep', 20_000);
   await acceptCompletion(page);
+});
+
+/**
+ * 回归：完成卡片的「收下」按钮，点右下 1/4 区域也必须生效。
+ *
+ * 之前的命中区是从 (-w/2, -h/2) 起算的 Rectangle，而 Phaser 的命中测试会再加上
+ * Container 的 displayOrigin（= size/2），于是可点区域缩到左上 1/4；
+ * 点正中时恰好压在边界上，表现为"点好几下才偶尔有反应"。
+ * 孩子真实按的是按钮中心偏下的位置，这条用例盯的就是这个位置。
+ */
+test('完成卡片：点「收下」的右下区域也能离开这一局', async ({ page }) => {
+  const level = loadLevel('sleep') as OrderLevelData;
+  await enterGame(page, 'sleep');
+
+  for (const step of level.steps) {
+    const spot = ORDER_LAYOUT.steps.find((entry) => entry.id === step.id);
+    if (!spot) throw new Error('布局里缺少 ' + step.id + ' 的坐标');
+    await clickDesign(page, spot.x, spot.y);
+    await page.waitForTimeout(220);
+  }
+  await waitTaskComplete(page, 'sleep', 20_000);
+
+  // 等 popIn 结束，再点按钮右下区域（不是正中心）
+  await page.waitForTimeout(420);
+  await clickDesign(page, COMPLETE_LAYOUT.accept.x + 90, COMPLETE_LAYOUT.accept.y + 30);
+  expect(
+    await waitEvent(page, 'session:exit:complete', 8_000),
+    '点「收下」的右下区域没有退出：命中区没有覆盖整颗按钮',
+  ).toBe(true);
+  await waitPlayClosed(page, 20_000);
 });

@@ -3,6 +3,7 @@ import type { GameContext, SfxKey, Stars } from '@bamboo/game-kit';
 import { createTranslator } from '@bamboo/i18n';
 import type { MessageKey, MessageParams, Translator } from '@bamboo/i18n';
 import { createHand, groundShadow, popIn, roundRect, shade, sparkleAt, starPath } from './cartoon';
+import { setContainerHitArea } from './hitArea';
 import { drawPanda } from './panda';
 import { isTapArmed } from './tapGuard';
 import { noteCorrect, noteMistake, starsForSession } from './session';
@@ -102,11 +103,9 @@ export abstract class BaseScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     container.add([lip, face, text]);
-    container.setSize(w, h);
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
-      Phaser.Geom.Rectangle.Contains,
-    );
+    // 命中区必须是「左上角原点」的整颗按钮，不能传居中矩形：
+    // Container 的 displayOrigin 会被命中测试再加一次，居中矩形会让可点区域缩到左上 1/4。
+    setContainerHitArea(container, w, h);
     container.on('pointerdown', () => {
       if (opts.disabled) return;
       this.sfx('tap');
@@ -267,20 +266,22 @@ export abstract class BaseScene extends Phaser.Scene {
       .setOrigin(0.5);
     layer.add(starLine);
 
-    // 按钮坐标与 @bamboo/templates/layout 的 COMPLETE_LAYOUT 保持一致（e2e 用那份点「收下」）
+    // 按钮坐标与 @bamboo/templates/layout 的 COMPLETE_LAYOUT 保持一致（e2e 用那份点「收下」）。
+    // 两个按钮中心相距 300、自身宽 270：留 30px 间隙，不重叠 ——
+    // 重叠时上层按钮会抢走下层按钮右半边的点击（点了「再来一局」却回到任务页）。
     const again = this.addButton(
-      this.W / 2 - 110,
+      this.W / 2 - 150,
       top + cardH + 96,
       this.tr('complete.replay'),
       () => this.exit('replay'),
-      { width: 300, height: 108, fontSize: 36, color: THEME.bamboo },
+      { width: 270, height: 108, fontSize: 36, color: THEME.bamboo },
     );
     const accept = this.addButton(
-      this.W / 2 + 110,
+      this.W / 2 + 150,
       top + cardH + 96,
       this.tr('complete.accept'),
       () => this.exit('complete'),
-      { width: 300, height: 108, fontSize: 36, color: THEME.warmRed },
+      { width: 270, height: 108, fontSize: 36, color: THEME.warmRed },
     );
     again.setDepth(1100);
     accept.setDepth(1100);

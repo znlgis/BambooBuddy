@@ -16,8 +16,12 @@ vi.stubGlobal('window', {
 
 const { installBackButtonHandler } = await import('./backButton');
 
-function routeOf(name: Route['name'], taskId?: Route['taskId']): Ref<Route> {
-  return ref<Route>(taskId === undefined ? { name } : { name, taskId });
+function routeOf(
+  name: Route['name'],
+  taskId?: Route['taskId'],
+  arcadeId?: Route['arcadeId'],
+): Ref<Route> {
+  return ref<Route>({ name, taskId, arcadeId });
 }
 
 /** 假原生桥：记下监听回调，press() 就是"按一次安卓实体返回键" */
@@ -50,6 +54,20 @@ describe('安卓实体返回键', () => {
       expect(goHome, name).toHaveBeenCalledTimes(1);
       expect(exitApp, name).not.toHaveBeenCalled();
     }
+  });
+
+  it('隐藏小游戏里按返回：先回游戏厅，再按才回小屋', () => {
+    const goHome = vi.fn();
+    const { bridge, press, exitApp } = fakeBridge();
+    const route = routeOf('arcadePlay', undefined, 'popstar');
+    installBackButtonHandler(route, bridge, goHome);
+    press();
+    expect(goHome).toHaveBeenCalledWith('/arcade');
+    route.value = { name: 'arcade' };
+    press();
+    expect(goHome).toHaveBeenCalledWith('/');
+    expect(goHome).toHaveBeenCalledTimes(2);
+    expect(exitApp).not.toHaveBeenCalled();
   });
 
   it('已经在小屋：才退出应用', () => {

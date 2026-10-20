@@ -1,0 +1,22 @@
+{
+  "name": "@bamboo/game-arcade",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./popstar": "./src/games/popstar.ts",
+    "./bounce": "./src/games/bounce.ts",
+    "./tetris": "./src/games/tetris.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@bamboo/game-kit": "workspace:*",
+    "@bamboo/i18n": "workspace:*",
+    "@bamboo/phaser-kit": "workspace:*",
+    "phaser": "^4.2.1"
+  }
+}

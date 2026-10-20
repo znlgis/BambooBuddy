@@ -6,26 +6,33 @@ import { platform } from './shell/platform';
 import { useI18n } from './shell/useI18n';
 import { useProgress } from './stores/progress';
 import { useSettings } from './stores/settings';
-import DiaryView from './views/DiaryView.vue';
 import DressView from './views/DressView.vue';
 import HomeView from './views/HomeView.vue';
 import TasksView from './views/TasksView.vue';
 
 /**
- * 玩法页与家长页按路由懒加载：首屏只有小屋/任务/装扮/日记，
+ * 玩法页、家长页、日记页都按路由懒加载：首屏只留小屋/任务/装扮，
  * Phaser 引擎要等孩子真的点开一个玩法才下载（体积门禁盯的就是这条）。
+ * 日记页也走懒加载：它只在点开时看，把这部分模板从首屏预算里挪出去。
  */
 const PlayView = defineAsyncComponent(() => import('./views/PlayView.vue'));
 const ParentView = defineAsyncComponent(() => import('./views/ParentView.vue'));
+const DiaryView = defineAsyncComponent(() => import('./views/DiaryView.vue'));
+// 隐藏小游戏：游戏厅与小游戏宿主都按需加载（小游戏 chunk 里才有 Phaser 场景）
+const ArcadeView = defineAsyncComponent(() => import('./views/ArcadeView.vue'));
+const ArcadePlayView = defineAsyncComponent(() => import('./views/ArcadePlayView.vue'));
 
 const { t, locale } = useI18n();
 const route = useRoute();
 const progress = useProgress();
 const settings = useSettings();
 
-/** 玩法页全屏（不要顶栏底栏），家长页也独立成页 */
+/** 玩法页全屏（不要顶栏底栏），家长页与隐藏小游戏也独立成页 */
 const isFullScreen = computed(
-  () => route.value.name === 'player' || route.value.name === 'parent',
+  () =>
+    route.value.name === 'player' ||
+    route.value.name === 'parent' ||
+    route.value.name === 'arcadePlay',
 );
 
 /**
@@ -158,11 +165,17 @@ function navClass(active: boolean): string {
       class="min-h-0 flex-1"
       :class="isFullScreen ? 'overflow-hidden' : 'overflow-y-auto'"
     >
+      <ArcadePlayView
+        v-if="route.name === 'arcadePlay' && route.arcadeId"
+        :key="route.arcadeId + ':' + locale.current"
+        :game-id="route.arcadeId"
+      />
       <PlayView
-        v-if="route.name === 'player' && route.taskId"
+        v-else-if="route.name === 'player' && route.taskId"
         :key="route.taskId + ':' + locale.current"
         :task-id="route.taskId"
       />
+      <ArcadeView v-else-if="route.name === 'arcade'" />
       <ParentView v-else-if="route.name === 'parent'" />
       <DiaryView v-else-if="route.name === 'diary'" />
       <DressView v-else-if="route.name === 'dress'" />

@@ -1,5 +1,13 @@
-import type { CareAction, DayRecord, PetState, SaveData, TaskProgress } from '@bamboo/game-kit';
-import { CARE_ACTIONS, SAVE_SCHEMA_VERSION } from '@bamboo/game-kit';
+import type {
+  ArcadeGameId,
+  ArcadeProgress,
+  CareAction,
+  DayRecord,
+  PetState,
+  SaveData,
+  TaskProgress,
+} from '@bamboo/game-kit';
+import { ARCADE_GAME_IDS, CARE_ACTIONS, SAVE_SCHEMA_VERSION } from '@bamboo/game-kit';
 import { STAT_KEYS, TASK_IDS } from '@bamboo/content/ids';
 import type { StatKey, TaskId } from '@bamboo/content/ids';
 import { CATALOG, defaultEquipment, findItem } from './catalog';
@@ -37,6 +45,22 @@ function uniqueTaskIds(value: unknown): TaskId[] {
   const out: TaskId[] = [];
   for (const item of value) {
     const id = asTaskId(item);
+    if (id !== null && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+function asArcadeGameId(value: unknown): ArcadeGameId | null {
+  return typeof value === 'string' && (ARCADE_GAME_IDS as readonly string[]).includes(value)
+    ? (value as ArcadeGameId)
+    : null;
+}
+
+function uniqueArcadeIds(value: unknown): ArcadeGameId[] {
+  if (!Array.isArray(value)) return [];
+  const out: ArcadeGameId[] = [];
+  for (const item of value) {
+    const id = asArcadeGameId(item);
     if (id !== null && !out.includes(id)) out.push(id);
   }
   return out;
@@ -102,7 +126,16 @@ export function emptyDay(date: string): DayRecord {
     care: [],
     seconds: 0,
     restDismissed: false,
+    arcade: [],
+    arcadeSecret: false,
   };
+}
+
+/** 三款隐藏小游戏的跨天记录：新档全为零，最高分只增不减 */
+export function emptyArcadeProgress(): Record<ArcadeGameId, ArcadeProgress> {
+  const out = {} as Record<ArcadeGameId, ArcadeProgress>;
+  for (const id of ARCADE_GAME_IDS) out[id] = { best: 0, plays: 0, lastPlayedDay: null };
+  return out;
 }
 
 export function emptySave(now: number): SaveData {
@@ -113,6 +146,7 @@ export function emptySave(now: number): SaveData {
     updatedAt: now,
     pet: emptyPet(now),
     tasks,
+    arcade: emptyArcadeProgress(),
     days: { [dayKey(now)]: emptyDay(dayKey(now)) },
   };
 }
@@ -195,6 +229,26 @@ function sanitizePet(value: unknown, now: number): PetState {
   };
 }
 
+function sanitizeArcade(value: unknown): Record<ArcadeGameId, ArcadeProgress> {
+  const out = {} as Record<ArcadeGameId, ArcadeProgress>;
+  for (const id of ARCADE_GAME_IDS) {
+    const raw = isRecord(value) && isRecord(value[id]) ? (value[id] as Raw) : null;
+    if (!raw) {
+      out[id] = { best: 0, plays: 0, lastPlayedDay: null };
+      continue;
+    }
+    out[id] = {
+      best: positiveInt(raw.best),
+      plays: positiveInt(raw.plays),
+      lastPlayedDay:
+        typeof raw.lastPlayedDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastPlayedDay)
+          ? raw.lastPlayedDay
+          : null,
+    };
+  }
+  return out;
+}
+
 function sanitizeTasks(value: unknown): Record<TaskId, TaskProgress> {
   const out = {} as Record<TaskId, TaskProgress>;
   for (const id of TASK_IDS) {
@@ -238,6 +292,8 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
       care: uniqueCares(raw.care),
       seconds: positiveInt(raw.seconds),
       restDismissed: raw.restDismissed === true,
+      arcade: uniqueArcadeIds(raw.arcade),
+      arcadeSecret: raw.arcadeSecret === true,
     };
   }
   return pruneDays(days);
@@ -245,11 +301,14 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
 
 /**
  * 存档迁移链：{ 旧版本号: 升到下一版的函数 }。
- * 现在只有 v1，所以这张表是空的 —— 但流程先立起来：以后加字段时把
- * SAVE_SCHEMA_VERSION 改成 2 并补一条，老玩家的星星不会因为升级一次就清零
- * （旧实现"版本不等就清空"正是 CHAGS 技术方案里点名批评过的做法）。
+ * v1 → v2 只新增隐藏小游戏的 arcade 字段：缺的字段由下面的 sanitize 逐条兜底，
+ * 老玩家的竹笋 / 星星 / 成长值一根都不会少（旧实现"版本不等就清空"是 CHAGS 点名批评过的做法）。
  */
-const MIGRATIONS: Record<number, (raw: Raw, now: number) => Raw> = {};
+const MIGRATIONS: Record<number, (raw: Raw, now: number) => Raw> = {
+  1: (raw) => raw,
+  // v2 → v3：只新增「今天触发过竹林小路」的布尔值；缺的字段照样由 sanitize 兜底
+  2: (raw) => raw,
+};
 
 /** 读档体检：坏字段只丢那一个，不连累整份存档；来自未来版本的存档才整体清空 */
 export function migrate(raw: unknown, now: number): SaveData {
@@ -266,6 +325,7 @@ export function migrate(raw: unknown, now: number): SaveData {
 
   const pet = sanitizePet(data.pet, now);
   const tasks = sanitizeTasks(data.tasks);
+  const arcade = sanitizeArcade(data.arcade);
   const days = sanitizeDays(data.days);
   const today = dayKey(now);
   // 至少要有今天这一条：日记录是日记与家长页的共同来源
@@ -276,6 +336,7 @@ export function migrate(raw: unknown, now: number): SaveData {
     updatedAt: finite(data.updatedAt, now),
     pet,
     tasks,
+    arcade,
     days: pruneDays(days),
   };
 }

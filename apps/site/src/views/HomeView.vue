@@ -6,7 +6,7 @@ import type { CareAction } from '@bamboo/game-kit';
 import { STAT_KEYS } from '@bamboo/content/ids';
 import type { MessageKey } from '@bamboo/i18n';
 import { currentSlot, dayKey, intimacyLevel, recommendedTasks, statHints } from '@bamboo/progress';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import PandaBuddy from '../components/PandaBuddy.vue';
 import RoomScene from '../components/RoomScene.vue';
 import { CARE_LABELS, STAT_COLORS, STAT_LABEL_KEYS, TASK_HINT_KEYS } from '../logic/labels';
@@ -15,6 +15,7 @@ import { navigate } from '../router';
 import { platform } from '../shell/platform';
 import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
+import { useSettings } from '../stores/settings';
 
 /**
  * 小屋：孩子每天打开的第一屏。
@@ -22,6 +23,7 @@ import { useProgress } from '../stores/progress';
  * 所有提醒都是"邀请"而不是"警告"（状态再低也不会红、不会扣分、不会结束游戏）。
  */
 const progress = useProgress();
+const settings = useSettings();
 const { t, locale } = useI18n();
 
 /** 任务标题随语言切换；逻辑（id/收益/解锁）仍用同一份摘要 */
@@ -50,6 +52,51 @@ const quickToday = computed(() =>
 );
 
 const careFlash = ref<string | null>(null);
+
+/* ---------------- 隐藏彩蛋：连续点竹竹 7 次（5 秒内） ---------------- */
+
+/** 点几下 / 多长时间内点完：孩子能连出来，大人瞎点一般不会凑巧触发 */
+const SECRET_TAPS = 7;
+const SECRET_WINDOW_MS = 5000;
+
+const secretOpen = ref(false);
+const pandaWiggle = ref(false);
+let pandaTaps: number[] = [];
+let wiggleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 竹竹的小秘密：连点它 7 次，会带你走一条竹林小路 ——
+ * 当天小门直接打开（不用先攒四件小事），三款小游戏无限畅玩。
+ * 已经触发过的当天再点，只当摸摸头（不重复弹浮层，也不重复写档）。
+ */
+async function onPandaTap(): Promise<void> {
+  pandaWiggle.value = true;
+  if (wiggleTimer !== null) clearTimeout(wiggleTimer);
+  wiggleTimer = setTimeout(() => {
+    pandaWiggle.value = false;
+    wiggleTimer = null;
+  }, 260);
+
+  if (progress.arcadeUnlimited) return;
+
+  const now = platform.now();
+  pandaTaps = [...pandaTaps.filter((at) => now - at < SECRET_WINDOW_MS), now];
+  if (pandaTaps.length < SECRET_TAPS) return;
+  pandaTaps = [];
+
+  const outcome = await progress.unlockArcadeSecret();
+  if (outcome === null || !outcome.ok) return;
+  secretOpen.value = true;
+  platform.audio.play('unlock');
+  if (!settings.muted) {
+    void platform.audio.speak(t('arcade.secret.voice'), locale.current).done;
+  }
+}
+
+onBeforeUnmount(() => {
+  if (wiggleTimer !== null) clearTimeout(wiggleTimer);
+  wiggleTimer = null;
+});
 
 async function doCare(action: CareAction): Promise<void> {
   if (!progress.careAvailable[action]) return;
@@ -101,7 +148,9 @@ onMounted(() => {
 
         <div
           data-testid="home-panda"
-          class="absolute bottom-1 left-1/2 h-60 w-52 -translate-x-1/2"
+          class="absolute bottom-1 left-1/2 h-60 w-52 -translate-x-1/2 touch-manipulation transition-transform duration-150"
+          :class="pandaWiggle ? 'scale-105' : ''"
+          @pointerdown="onPandaTap"
         >
           <PandaBuddy
             :mood="mood"
@@ -130,6 +179,69 @@ onMounted(() => {
       <p class="bg-card px-3 py-2 text-base text-inksoft">
         {{ progress.nextStage ? t('home.nextStage', { n: progress.xpToNext }) : t('home.maxStage') }}
       </p>
+    </div>
+
+    <!-- 竹林小门：完成今天四件小事后出现，当天有效；上面三款小游戏各玩一次 -->
+    <button
+      v-if="progress.arcadeUnlocked"
+      type="button"
+      data-testid="home-arcade"
+      class="flex min-h-16 w-full items-center gap-3 rounded-3xl border-2 border-bamboo bg-mint px-4 py-3 text-left active:scale-[0.99]"
+      @click="navigate('/arcade')"
+    >
+      <span
+        class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-bamboo-deep text-3xl"
+        aria-hidden="true"
+      >
+        🚪
+      </span>
+      <span class="min-w-0 flex-1">
+        <span class="block text-base font-bold text-bamboo-deep">
+          {{ t('arcade.door') }}
+          <span
+            v-if="progress.arcadeUnlimited"
+            data-testid="home-arcade-unlimited"
+            class="ml-1 rounded-full bg-bamboo-deep px-2 py-0.5 text-base text-white"
+          >
+            ∞ {{ t('arcade.unlimited') }}
+          </span>
+        </span>
+        <span class="block text-base text-ink">
+          {{ progress.arcadeUnlimited ? t('arcade.unlimitedHint') : t('arcade.doorHint') + ' · ' + t('arcade.oncePerDay') }}
+        </span>
+      </span>
+      <span class="text-base text-bamboo" aria-hidden="true">▶</span>
+    </button>
+
+    <!-- 竹林小路：连点竹竹 7 次后的隐藏彩蛋（当天无限畅玩） -->
+    <div
+      v-if="secretOpen"
+      data-testid="home-secret"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 px-6"
+    >
+      <div class="w-full max-w-sm rounded-3xl border-2 border-bamboo bg-card p-6 text-center">
+        <div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-mint text-5xl" aria-hidden="true">
+          🐼
+        </div>
+        <p class="mt-3 text-xl font-bold text-bamboo-deep">{{ t('arcade.secret.title') }}</p>
+        <p class="mt-2 text-base text-ink">{{ t('arcade.secret.body') }}</p>
+        <button
+          type="button"
+          data-testid="home-secret-go"
+          class="mt-5 min-h-14 w-full rounded-full bg-bamboo-deep px-5 py-3 text-base font-bold text-white active:scale-95"
+          @click="secretOpen = false; navigate('/arcade')"
+        >
+          {{ t('arcade.secret.go') }}
+        </button>
+        <button
+          type="button"
+          data-testid="home-secret-later"
+          class="mt-2 min-h-12 w-full rounded-full bg-cream px-5 py-3 text-base font-bold text-ink active:scale-95"
+          @click="secretOpen = false"
+        >
+          {{ t('arcade.secret.later') }}
+        </button>
+      </div>
     </div>
 
     <!-- 存不上档要说出来：静默丢进度是最坏的结果 -->

@@ -6,5 +6,6 @@ export * from './rewards';
 export * from './catalog';
 export * from './intimacy';
 export * from './save';
+export * from './arcade';
 export * from './diary';
 export * from './manager';

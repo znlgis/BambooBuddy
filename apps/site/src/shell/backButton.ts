@@ -30,7 +30,13 @@ export function installBackButtonHandler(
   // 浏览器（含 PWA）里没有原生桥：直接返回，不报错
   if (bridge === null) return;
   bridge.addListener('backButton', () => {
-    if (route.value.name !== 'home') {
+    const name = route.value.name;
+    // 隐藏小游戏：先回游戏厅（不直接回小屋，孩子可能还想换一个玩）
+    if (name === 'arcadePlay') {
+      goHome('/arcade');
+      return;
+    }
+    if (name !== 'home') {
       goHome('/');
       return;
     }

@@ -29,6 +29,8 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const leaving = ref(false);
 const toast = ref<string[] | null>(null);
+/** 今天第四件小事完成时的小门浮层（只有跨过门槛那一次会出现） */
+const reveal = ref(false);
 
 const progress = useProgress();
 const settings = useSettings();
@@ -62,6 +64,8 @@ async function finishTask(stars: Stars): Promise<void> {
   if (outcome.sticker) lines.push(t('complete.sticker'));
   if (progress.unsaved) lines.push(t('complete.saveWarn'));
   showToast(lines);
+  // 第四件小事：奖励照旧，然后多弹出「发现一扇小门」（当天只此一次）
+  if (outcome.arcadeUnlocked) reveal.value = true;
 }
 
 function handleEvent<K extends keyof GameEventMap>(type: K, payload: GameEventMap[K]): void {
@@ -79,6 +83,8 @@ function handleExit(reason?: 'quit' | 'replay'): void {
     void restart();
     return;
   }
+  // 小门浮层开着时不自动跳走：孩子要自己选「推开门」还是「等会儿」
+  if (reveal.value) return;
   if (toast.value === null) {
     navigate('/tasks');
     return;
@@ -268,6 +274,37 @@ onBeforeUnmount(async () => {
           @click="navigate('/tasks')"
         >
           {{ t('play.backToTasks') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 发现小门：完成今天第四件小事时出现，一天只有这一次 -->
+    <div
+      v-if="reveal"
+      data-testid="play-arcade-reveal"
+      class="absolute inset-0 z-50 flex items-center justify-center bg-ink/70 px-6"
+    >
+      <div class="w-full max-w-sm rounded-3xl border-2 border-bamboo bg-card p-6 text-center">
+        <div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-mint text-5xl" aria-hidden="true">
+          🚪
+        </div>
+        <p class="mt-3 text-xl font-bold text-bamboo-deep">{{ t('arcade.reveal.title') }}</p>
+        <p class="mt-2 text-base text-ink">{{ t('arcade.reveal.body') }}</p>
+        <button
+          type="button"
+          data-testid="play-arcade-go"
+          class="mt-5 min-h-14 w-full rounded-full bg-bamboo-deep px-5 py-3 text-base font-bold text-white active:scale-95"
+          @click="navigate('/arcade')"
+        >
+          {{ t('arcade.reveal.go') }}
+        </button>
+        <button
+          type="button"
+          data-testid="play-arcade-later"
+          class="mt-2 min-h-12 w-full rounded-full bg-cream px-5 py-3 text-base font-bold text-ink active:scale-95"
+          @click="navigate('/tasks')"
+        >
+          {{ t('arcade.reveal.later') }}
         </button>
       </div>
     </div>

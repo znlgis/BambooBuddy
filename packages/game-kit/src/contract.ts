@@ -129,7 +129,21 @@ export interface GameModule {
  * 存档（纯数据；读写与迁移在 @bamboo/progress）
  * ------------------------------------------------------------------ */
 
-export const SAVE_SCHEMA_VERSION = 1;
+export const SAVE_SCHEMA_VERSION = 3;
+
+/**
+ * 三款隐藏小游戏的 id：与日常任务（TaskId）完全分开的两组概念。
+ * 唯一事实来源 —— 存档键、外壳路由、游戏包导出名都从这里取。
+ */
+export const ARCADE_GAME_IDS = ['popstar', 'bounce', 'tetris'] as const;
+export type ArcadeGameId = (typeof ARCADE_GAME_IDS)[number];
+
+/** 跨天保留的小游戏记录：最高成绩与总次数（「今天还能不能玩」另存日记录里） */
+export interface ArcadeProgress {
+  best: number;
+  plays: number;
+  lastPlayedDay: string | null;
+}
 
 /** 每天固定可做的三个亲昵动作；喂竹笋单独算（消耗奖励，不算打卡） */
 export type CareAction = 'pat' | 'hug' | 'highfive';
@@ -184,6 +198,13 @@ export interface DayRecord {
   /** 今天玩游戏的秒数（只统计游戏时间，家长页与 20 分钟休息提醒用） */
   seconds: number;
   restDismissed: boolean;
+  /** 今天玩过哪些隐藏小游戏（去重；「每天每款一次」就读它） */
+  arcade: ArcadeGameId[];
+  /**
+   * 今天触发了「竹林小路」这个隐藏彩蛋：
+   * 小门直接打开（不用攒四件小事），三款游戏当天无限畅玩。跨天自动消失。
+   */
+  arcadeSecret: boolean;
 }
 
 export interface SaveData {
@@ -191,6 +212,8 @@ export interface SaveData {
   updatedAt: number;
   pet: PetState;
   tasks: Record<TaskId, TaskProgress>;
+  /** 隐藏小游戏的跨天记录（最高成绩 / 总次数）；「今天玩过」在 days[今天].arcade */
+  arcade: Record<ArcadeGameId, ArcadeProgress>;
   /** 只保留最近 30 天，避免存档无限增长 */
   days: Record<string, DayRecord>;
 }

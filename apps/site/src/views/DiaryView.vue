@@ -2,6 +2,7 @@
 import { getTaskSummary, taskSummaries } from '@bamboo/content';
 import type { TaskSummary, TaskId } from '@bamboo/content';
 import { dayKey } from '@bamboo/progress';
+import { arcadeInfo } from '../arcade/catalog';
 import { computed, ref } from 'vue';
 import { dayKind, stickerRows } from '../logic/diary';
 import type { StickerRow } from '../logic/diary';
@@ -19,6 +20,16 @@ import { useSettings } from '../stores/settings';
 const progress = useProgress();
 const settings = useSettings();
 const { t, locale } = useI18n();
+
+/** 今天玩过的隐藏小游戏（名字跟着语言走） */
+const todayArcade = computed(() => progress.todayRecord.arcade);
+const todayArcadeNames = computed(() =>
+  todayArcade.value
+    .map((id) => arcadeInfo(id))
+    .filter((game): game is NonNullable<typeof game> => game !== undefined)
+    .map((game) => t(game.nameKey))
+    .join('、'),
+);
 
 const todayLines = computed(() =>
   progress.todayRecord.completed
@@ -91,6 +102,14 @@ function stickerHint(row: StickerRow): string {
           <span class="min-w-0 flex-1">{{ task.diary }}</span>
         </li>
       </ul>
+
+      <p
+        v-if="todayArcade.length > 0"
+        data-testid="diary-arcade"
+        class="mt-3 text-base text-ink"
+      >
+        🎮 {{ t('diary.arcade', { names: todayArcadeNames }) }}
+      </p>
 
       <p class="mt-3 text-base text-gold">
         {{ t('diary.rewards', { s: progress.todayRecord.rewards.shoots, f: progress.todayRecord.rewards.fragments }) }}

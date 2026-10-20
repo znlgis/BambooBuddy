@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProgressStore, SaveData } from '@bamboo/game-kit';
+import { SAVE_SCHEMA_VERSION } from '@bamboo/game-kit';
 import type { TaskSummary } from '@bamboo/content';
 import {
   addDays,
@@ -232,7 +233,7 @@ describe('亲密度', () => {
 describe('存档迁移', () => {
   it('空/坏数据回落到空档', () => {
     expect(migrate(null, T0).pet.name).toBe('竹竹');
-    expect(migrate('nope', T0).schemaVersion).toBe(1);
+    expect(migrate('nope', T0).schemaVersion).toBe(SAVE_SCHEMA_VERSION);
     expect(migrate({ schemaVersion: 99 }, T0).tasks.brush.completions).toBe(0);
   });
 

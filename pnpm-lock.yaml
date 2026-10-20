@@ -84,6 +84,9 @@ importers:
       '@bamboo/content':
         specifier: workspace:*
         version: link:../../packages/content
+      '@bamboo/game-arcade':
+        specifier: workspace:*
+        version: link:../../games/arcade
       '@bamboo/game-daily':
         specifier: workspace:*
         version: link:../../games/daily
@@ -118,6 +121,21 @@ importers:
       vite:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
+
+  games/arcade:
+    dependencies:
+      '@bamboo/game-kit':
+        specifier: workspace:*
+        version: link:../../packages/game-kit
+      '@bamboo/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
+      '@bamboo/phaser-kit':
+        specifier: workspace:*
+        version: link:../../packages/phaser-kit
+      phaser:
+        specifier: ^4.2.1
+        version: 4.2.1
 
   games/daily:
     dependencies:

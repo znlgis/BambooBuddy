@@ -2,6 +2,12 @@ import type { TaskSummary } from '@bamboo/content';
 import type { TimeSlot } from '@bamboo/content/ids';
 import { TIME_SLOTS } from '@bamboo/content/ids';
 
+/**
+ * 今天要做几件小事。推荐函数与「隐藏小游戏解锁」共用这一个常量：
+ * 以后想改成 3 件或 5 件，只改这里，两处判定不会走散。
+ */
+export const DAILY_TASK_TARGET = 4;
+
 /** FNV-1a：同一天同一时段永远推荐同一组任务（可复现，测试不需要随机数） */
 export function hashString(text: string): number {
   let hash = 0x811c9dc5;
@@ -59,7 +65,7 @@ export function recommendedTasks(
   dateKey: string,
   slot: TimeSlot,
   tasks: readonly TaskSummary[],
-  count = 4,
+  count = DAILY_TASK_TARGET,
 ): TaskSummary[] {
   if (tasks.length === 0) return [];
   const target = Math.min(Math.max(1, count), tasks.length);

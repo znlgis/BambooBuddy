@@ -1,4 +1,5 @@
 import type {
+  ArcadeGameId,
   CareAction,
   DayRecord,
   PetState,
@@ -11,6 +12,14 @@ import type {
 import type { TaskSummary } from '@bamboo/content';
 import { CLOTHING_SLOTS, findItem, ownsItem } from './catalog';
 import type { CatalogItem } from './catalog';
+import {
+  arcadeStatus as readArcadeStatus,
+  arcadeUnlimited as isArcadeUnlimited,
+  arcadeUnlocked as isArcadeUnlocked,
+  isArcadeGameId,
+  withArcadePlay,
+} from './arcade';
+import type { ArcadeStatus } from './arcade';
 import { dayKey, daysBetween } from './day';
 import { stageForXp } from './growth';
 import { CARE_MOOD, CARE_POINTS } from './intimacy';
@@ -26,6 +35,25 @@ export interface CompletionOutcome {
   xp: number;
   fragments: number;
   sticker: boolean;
+  /** 这一局刚好跨过「今天四件小事」的门槛：外壳据此弹出「发现一扇小门」 */
+  arcadeUnlocked: boolean;
+}
+
+export type ArcadePlayReason = 'unknown' | 'notUnlocked' | 'already';
+export interface ArcadePlayOutcome {
+  ok: boolean;
+  reason?: ArcadePlayReason;
+  gameId: ArcadeGameId;
+  /** 玩完之后（或现有的）最高成绩 */
+  best: number;
+  /** 玩完之后（或现有的）总局数 */
+  plays: number;
+}
+
+export interface ArcadeSecretOutcome {
+  ok: boolean;
+  /** 今天早就触发过了（重复触发不算错，只是不重复弹浮层） */
+  already: boolean;
 }
 
 export interface CareOutcome {
@@ -141,6 +169,7 @@ export class ProgressManager {
     const today = dayKey(now);
     const data = ensureDay(this.data, now);
     const day = data.days[today]!;
+    const arcadeWasUnlocked = isArcadeUnlocked(day);
     const firstToday = !day.completed.includes(task.id);
     const distinctToday = day.completed.length + (firstToday ? 1 : 0);
     const reward = completionReward(task, firstToday);
@@ -177,6 +206,7 @@ export class ProgressManager {
         fragments: day.rewards.fragments + fragments,
       },
       stickers: sticker ? [...day.stickers, task.id] : day.stickers,
+      arcade: day.arcade,
     };
 
     const next: SaveData = {
@@ -196,7 +226,60 @@ export class ProgressManager {
       xp: reward.xp,
       fragments,
       sticker,
+      arcadeUnlocked: !arcadeWasUnlocked && isArcadeUnlocked(nextDay),
     };
+  }
+
+  /** 今天的小门状态（未解锁 / 已玩哪几款 / 是否无限畅玩），界面与 e2e 都从这里读 */
+  arcadeStatus(now = this.clock()): ArcadeStatus {
+    return readArcadeStatus(this.data, now);
+  }
+
+  /**
+   * 触发隐藏彩蛋「竹林小路」：当天小门直接打开，三款游戏无限畅玩。
+   * 只写日记录里的一个布尔值（跨天自动失效），不发奖励、不影响任务统计。
+   */
+  async unlockArcadeSecret(now = this.clock()): Promise<ArcadeSecretOutcome> {
+    const today = dayKey(now);
+    const data = ensureDay(this.data, now);
+    const day = data.days[today]!;
+    if (day.arcadeSecret) return { ok: true, already: true };
+    const next: SaveData = {
+      ...data,
+      updatedAt: now,
+      days: { ...data.days, [today]: { ...day, arcadeSecret: true } },
+    };
+    await this.commit(next);
+    return { ok: true, already: false };
+  }
+
+  /**
+   * 记录一局隐藏小游戏：只在「已解锁 + 今天没玩过」时成功。
+   * 调用时机是一局真正结束（arcade:complete），中途退出不消耗当天的机会。
+   */
+  async playArcade(
+    gameId: ArcadeGameId,
+    score: number,
+    now = this.clock(),
+  ): Promise<ArcadePlayOutcome> {
+    if (!isArcadeGameId(gameId)) {
+      return { ok: false, reason: 'unknown', gameId, best: 0, plays: 0 };
+    }
+    const today = dayKey(now);
+    const data = ensureDay(this.data, now);
+    const day = data.days[today]!;
+    const previous = data.arcade[gameId] ?? { best: 0, plays: 0, lastPlayedDay: null };
+    if (!isArcadeUnlocked(day)) {
+      return { ok: false, reason: 'notUnlocked', gameId, best: previous.best, plays: previous.plays };
+    }
+    // 隐藏彩蛋触发后当天无限畅玩：同一款可以反复玩，最高分与总局数照常累计
+    if (!isArcadeUnlimited(day) && day.arcade.includes(gameId)) {
+      return { ok: false, reason: 'already', gameId, best: previous.best, plays: previous.plays };
+    }
+    const next = withArcadePlay(data, gameId, score, now);
+    await this.commit(next);
+    const record = next.arcade[gameId];
+    return { ok: true, gameId, best: record.best, plays: record.plays };
   }
 
   /** 摸头 / 抱抱 / 击掌：每天各一次，不消耗任何资源 */

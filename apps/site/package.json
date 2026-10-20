@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@bamboo/content": "workspace:*",
+    "@bamboo/game-arcade": "workspace:*",
     "@bamboo/game-daily": "workspace:*",
     "@bamboo/game-kit": "workspace:*",
     "@bamboo/i18n": "workspace:*",

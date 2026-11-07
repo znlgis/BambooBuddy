@@ -14,8 +14,15 @@ export const POPSTAR_FAMILY_COUNT = 4;
 /** 至少 2 颗连在一起才消；单颗点了什么也不会发生（不是失败） */
 export const POPSTAR_MIN_GROUP = 2;
 export const POPSTAR_ROUNDS = 3;
-/** 三轮各要收集的星星数；一局最多 96 颗 */
+/** 三轮各要收集的星星数（level=1 时）；一局最多 96 颗 */
 export const POPSTAR_GOALS = [24, 32, 40] as const;
+/** 难度等级范围：1 起、12 封顶（外壳按累计局数算出的等级也会先夹到这个区间） */
+export const POPSTAR_MIN_LEVEL = 1;
+export const POPSTAR_MAX_LEVEL = 12;
+/** 每升一级，每轮目标多要这么多颗 */
+export const POPSTAR_GOAL_PER_LEVEL = 2;
+/** 单轮目标上限：一局最多收集 96 颗，留足余量，绝不要求超过整局可收集量 */
+export const POPSTAR_MAX_GOAL = 80;
 /** autoplay 每 120ms 替你点一次「当前最大的组」 */
 export const POPSTAR_AUTO_STEP_MS = 120;
 /** 8 秒没操作，就轻轻闪一下当前最大的组（不强制、不扣分） */
@@ -30,6 +37,8 @@ export type PopstarStatus = 'playing' | 'roundDone' | 'done';
 
 export interface PopstarState {
   readonly seed: number;
+  /** 难度等级 1..12：越高每轮目标越大；一局仍是 3 轮，跨天由外壳保留 */
+  readonly level: number;
   /** 0-based 轮次 */
   readonly round: number;
   readonly board: PopstarBoard;
@@ -44,8 +53,9 @@ export interface PopstarState {
   readonly autoCollectedTotal: number;
 }
 
-/** 正常开局只传 seed；固定棋盘只在测试 / 调试里用 */
+/** 正常开局只传 seed（与等级）；固定棋盘只在测试 / 调试里用 */
 export interface PopstarStateOptions {
+  readonly level?: number;
   readonly board?: PopstarBoard;
   readonly round?: number;
   readonly collected?: number;
@@ -229,18 +239,33 @@ function collapseAndRefill(
   return makeSolvable(next, random);
 }
 
-export function goalForRound(round: number): number {
-  const index = clampInt(round, 0, POPSTAR_ROUNDS - 1);
-  return POPSTAR_GOALS[index] ?? POPSTAR_GOALS[0];
+/** 把等级夹到 1..12；NaN / Infinity / 越界都兜底成合法等级（只会变难，不会倒挂） */
+export function clampLevel(level: number | undefined): number {
+  if (level === undefined || !Number.isFinite(level)) return POPSTAR_MIN_LEVEL;
+  return clampInt(level, POPSTAR_MIN_LEVEL, POPSTAR_MAX_LEVEL);
 }
 
+/**
+ * 第 round 轮的目标（round 按 0..2 夹紧）。
+ * level=1 就是老的三轮 24 / 32 / 40；每升一级每轮 +2，再封顶 POPSTAR_MAX_GOAL。
+ * 12 级最难时三轮是 46 / 54 / 62，仍然远低于一局能收集的 96 颗（绝不会凑不够）。
+ */
+export function goalForRound(round: number, level = 1): number {
+  const index = clampInt(round, 0, POPSTAR_ROUNDS - 1);
+  const base = POPSTAR_GOALS[index] ?? POPSTAR_GOALS[0];
+  const raise = (clampLevel(level) - 1) * POPSTAR_GOAL_PER_LEVEL;
+  return Math.min(POPSTAR_MAX_GOAL, base + raise);
+}
+
+/** 本轮还差多少颗：永远用 state.level，不能退回 level=1 的旧目标 */
 export function remainingToGoal(state: PopstarState): number {
-  return Math.max(0, goalForRound(state.round) - state.collected);
+  return Math.max(0, goalForRound(state.round, state.level) - state.collected);
 }
 
 /** 0–1，竹筐里的填充比例 */
 export function roundProgress(state: PopstarState): number {
-  return clampInt(state.collected, 0, goalForRound(state.round)) / goalForRound(state.round);
+  const goal = goalForRound(state.round, state.level);
+  return clampInt(state.collected, 0, goal) / goal;
 }
 
 /** 组越大音调越高（场景用来放「叮」的一声） */
@@ -265,7 +290,7 @@ function settleNoMove(state: PopstarState): { state: PopstarState; autoCollected
     collected,
     score: state.score + remaining,
     autoCollectedTotal: state.autoCollectedTotal + remaining,
-    status: collected >= goalForRound(state.round) ? 'roundDone' : 'playing',
+    status: collected >= goalForRound(state.round, state.level) ? 'roundDone' : 'playing',
   };
   if (next.status === 'roundDone') {
     return { state: { ...next, board: createEmptyBoard() }, autoCollected: remaining };
@@ -280,6 +305,7 @@ export function createPopstarState(seed: number, options: PopstarStateOptions = 
   const collected = Math.max(0, Math.floor(options.collected ?? 0));
   return {
     seed: seed >>> 0,
+    level: clampLevel(options.level),
     round,
     board,
     collected,
@@ -318,7 +344,7 @@ export function tryPop(state: PopstarState, group: readonly number[]): PopResult
     board: collapseAndRefill(state.board, removed, random),
     collected,
     score: state.score + popped,
-    status: collected >= goalForRound(state.round) ? 'roundDone' : 'playing',
+    status: collected >= goalForRound(state.round, state.level) ? 'roundDone' : 'playing',
     pops: state.pops + 1,
   };
 

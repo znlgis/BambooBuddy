@@ -71,12 +71,17 @@ class BounceScene extends ArcadeScene {
   }
 
   create(): void {
-    // 种子 = 游戏 id + 打开这一局的墙钟；同一次打开可复现，换一局布局会变
-    this.state = createBounceGame(hashString(this.ctx.manifest.id + ':' + this.now()));
+    // 种子 = 游戏 id + 打开这一局的墙钟；同一次打开可复现，换一局布局会变。
+    // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留），只影响每轮的方块数
+    this.state = createBounceGame(hashString(this.ctx.manifest.id + ':' + this.now()), {
+      level: this.level,
+    });
     this.aim = DEFAULT_AIM;
 
     this.drawStage();
     this.drawHeader(this.t('arcade.bounce.name'));
+    // 难度药丸放左上空白处：中间是"还差几个方块"、右边是星星 HUD，默认位置会叠上去
+    this.drawLevelPill(120, 226);
     this.roundText = this.addText(
       this.W / 2,
       108,

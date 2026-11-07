@@ -4,10 +4,15 @@ import {
   POPSTAR_CELLS,
   POPSTAR_COLS,
   POPSTAR_GOALS,
+  POPSTAR_GOAL_PER_LEVEL,
+  POPSTAR_MAX_GOAL,
+  POPSTAR_MAX_LEVEL,
+  POPSTAR_MIN_LEVEL,
   POPSTAR_MIN_GROUP,
   POPSTAR_ROUNDS,
   POPSTAR_ROWS,
   advanceRound,
+  clampLevel,
   createPopstarState,
   dealBoard,
   filledCount,
@@ -269,5 +274,134 @@ describe('autoplay：选最大组、不空转、一局能走完', () => {
     expect(popTone(5)).toBeLessThan(popTone(9));
     expect(popTone(100)).toBeLessThanOrEqual(1200);
     expect(popTone(POPSTAR_MIN_GROUP)).toBeGreaterThan(0);
+  });
+});
+
+describe('难度等级：level=1 与老行为一致，升级只加目标、不制造失败', () => {
+  it('level=1 / 不传 level 时，三轮目标仍是 24 / 32 / 40', () => {
+    expect(goalForRound(0, 1)).toBe(POPSTAR_GOALS[0]);
+    expect(goalForRound(1, 1)).toBe(POPSTAR_GOALS[1]);
+    expect(goalForRound(2, 1)).toBe(POPSTAR_GOALS[2]);
+    expect(goalForRound(0)).toBe(24);
+    expect(goalForRound(1)).toBe(32);
+    expect(goalForRound(2)).toBe(40);
+    expect(goalForRound(99, 1)).toBe(40);
+
+    const state = createPopstarState(1);
+    expect(state.level).toBe(1);
+    expect(remainingToGoal(state)).toBe(24);
+    expect(roundProgress(state)).toBe(0);
+  });
+
+  it('每升一级每轮 +2，随等级单调不减且不超过单轮上限', () => {
+    for (let round = 0; round < POPSTAR_ROUNDS; round += 1) {
+      let previous = 0;
+      for (let level = POPSTAR_MIN_LEVEL; level <= POPSTAR_MAX_LEVEL; level += 1) {
+        const goal = goalForRound(round, level);
+        expect(goal).toBe(POPSTAR_GOALS[round] + (level - 1) * POPSTAR_GOAL_PER_LEVEL);
+        expect(goal).toBeGreaterThanOrEqual(previous);
+        expect(goal).toBeLessThanOrEqual(POPSTAR_MAX_GOAL);
+        // 单轮目标始终远低于本轮最多能收集的 96 颗，永远凑得够
+        expect(goal).toBeLessThan(POPSTAR_CELLS);
+        previous = goal;
+      }
+    }
+    // 12 级最难：46 / 54 / 62（整局 162），仍远低于三轮一共能收集的 288 颗
+    expect([goalForRound(0, 12), goalForRound(1, 12), goalForRound(2, 12)]).toEqual([46, 54, 62]);
+    // 上限 clamp 只是兜底保护（1..12 级够不到），越界等级也只会停在 12 级的目标
+    expect(goalForRound(2, 999)).toBe(goalForRound(2, POPSTAR_MAX_LEVEL));
+    expect(goalForRound(2, 999)).toBeLessThanOrEqual(POPSTAR_MAX_GOAL);
+  });
+
+  it('内部目标检查跟着 state.level 走，进下一轮也保留等级', () => {
+    // 同一副棋盘、同样已收集 22：level=1 目标是 24（再消 2 颗就完成），level=5 目标是 32（还差 10 颗）
+    const pair = boardOf(['11......', ...blankRows(9)]);
+    const easy = createPopstarState(7, { board: pair, collected: 22, score: 22, level: 1 });
+    const hard = createPopstarState(7, { board: pair, collected: 22, score: 22, level: 5 });
+    expect(goalForRound(0, hard.level)).toBe(32);
+    expect(remainingToGoal(hard)).toBe(10);
+    expect(roundProgress(hard)).toBeCloseTo(22 / 32);
+    expect(tryPop(easy, [0, 1]).state.status).toBe('roundDone');
+    expect(tryPop(hard, [0, 1]).state.status).toBe('playing');
+
+    // 用一副 4 星棋盘把 level=5 的第一轮做完，进下一轮后等级不丢、目标按 40 走
+    const four = boardOf(['1111....', ...blankRows(9)]);
+    let state = createPopstarState(7, { board: four, collected: 28, score: 28, level: 5 });
+    state = tryPop(state, [0, 1, 2, 3]).state;
+    expect(state.status).toBe('roundDone');
+    expect(state.level).toBe(5);
+    state = advanceRound(state);
+    expect(state.round).toBe(1);
+    expect(state.level).toBe(5);
+    expect(remainingToGoal(state)).toBe(40);
+    expect(roundProgress(state)).toBe(0);
+  });
+
+  it('无解飞回天上也按 state.level 结算：30 颗在 level=1 完成、level=5 还没完成', () => {
+    const board = boardOf(['1230....', ...blankRows(9)]);
+    expect(largestGroup(board)).toEqual([]);
+    const easy = createPopstarState(11, { board, collected: 26, score: 26, level: 1 });
+    const hard = createPopstarState(11, { board, collected: 26, score: 26, level: 5 });
+    const easyResult = tryPop(easy, []);
+    expect(easyResult.autoCollected).toBe(4);
+    expect(easyResult.state.collected).toBe(30);
+    expect(easyResult.state.status).toBe('roundDone');
+    const hardResult = tryPop(hard, []);
+    expect(hardResult.autoCollected).toBe(4);
+    expect(hardResult.state.collected).toBe(30);
+    expect(hardResult.state.status).toBe('playing');
+  });
+
+  it('level 越界 / 非法值兜底到 1..12，目标不会倒挂也不会崩', () => {
+    expect(clampLevel(undefined)).toBe(POPSTAR_MIN_LEVEL);
+    expect(clampLevel(Number.NaN)).toBe(POPSTAR_MIN_LEVEL);
+    expect(clampLevel(Number.POSITIVE_INFINITY)).toBe(POPSTAR_MIN_LEVEL);
+    expect(clampLevel(-5)).toBe(POPSTAR_MIN_LEVEL);
+    expect(clampLevel(1.9)).toBe(1);
+    expect(clampLevel(12.9)).toBe(POPSTAR_MAX_LEVEL);
+    expect(clampLevel(999)).toBe(POPSTAR_MAX_LEVEL);
+
+    for (const raw of [0, -3, 99, Number.NaN, Number.NEGATIVE_INFINITY]) {
+      const state = createPopstarState(3, { level: raw });
+      expect(state.level).toBeGreaterThanOrEqual(POPSTAR_MIN_LEVEL);
+      expect(state.level).toBeLessThanOrEqual(POPSTAR_MAX_LEVEL);
+    }
+    expect(createPopstarState(3).level).toBe(1);
+    expect(createPopstarState(3, { level: 12 }).level).toBe(12);
+    expect(goalForRound(0, 0)).toBe(24);
+    expect(goalForRound(0, 999)).toBe(goalForRound(0, 12));
+  });
+
+  it('12 级（最难）autoplay 仍能在有限步内打完整局 3 轮，且每一步都真的前进', () => {
+    const level = POPSTAR_MAX_LEVEL;
+    const totalGoal = goalForRound(0, level) + goalForRound(1, level) + goalForRound(2, level);
+    expect(totalGoal).toBe(162);
+    for (const seed of [1, 7, 42, 2024, 20261020]) {
+      let state = createPopstarState(seed, { level });
+      expect(state.level).toBe(level);
+      let steps = 0;
+      let pops = 0;
+      while (state.status !== 'done' && steps < 400) {
+        steps += 1;
+        if (state.status === 'roundDone') {
+          state = advanceRound(state);
+          continue;
+        }
+        const group = largestGroup(state.board);
+        expect(group.length).toBeGreaterThanOrEqual(POPSTAR_MIN_GROUP);
+        const result = tryPop(state, group);
+        expect(result.popped).toBe(group.length);
+        // 每一步都必须真的前进：消除或自动收星至少发生一件，绝不空转
+        expect(result.popped + result.autoCollected).toBeGreaterThan(0);
+        state = result.state;
+        pops += 1;
+      }
+      expect(state.status).toBe('done');
+      expect(steps).toBeLessThan(400);
+      expect(pops).toBeGreaterThan(0);
+      expect(state.level).toBe(level);
+      // 每轮都至少收到目标数，整局分数必然不低于三轮目标之和
+      expect(state.score).toBeGreaterThanOrEqual(totalGoal);
+    }
   });
 });

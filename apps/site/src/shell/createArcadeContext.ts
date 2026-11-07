@@ -38,12 +38,15 @@ export function createArcadeContext(
   container: HTMLElement,
   hooks: ArcadeHostHooks,
   locale: Locale,
+  /** 本局难度等级（1..12）：由该款累计完成局数派生，宿主每局重新读一次存档传入 */
+  level: number,
 ): ArcadeContext {
   return {
     container,
     manifest,
     services: platform,
     locale,
+    level,
     reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     debug: readDebugOptions(),
     emit(type, payload) {

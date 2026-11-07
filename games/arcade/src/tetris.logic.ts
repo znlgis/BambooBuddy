@@ -17,6 +17,15 @@ export const TETRIS_START_FALL_MS = 1100;
 export const TETRIS_MIN_FALL_MS = 550;
 /** 每消一行加快一点，3 行时正好 560ms（不会出现“眨眼就没了”） */
 export const TETRIS_FALL_STEP_MS = 180;
+/** 难度等级范围：1 最简单、12 封顶（外壳按该游戏累计局数算好传进来，跨天保留） */
+export const TETRIS_LEVEL_MIN = 1;
+export const TETRIS_LEVEL_MAX = 12;
+/** 每升一级，起始下落间隔缩短 60ms：Lv.1 1100ms → Lv.12 440ms */
+export const TETRIS_LEVEL_START_STEP_MS = 60;
+/** 每升一级，保底间隔同步下调 20ms：Lv.1 550ms → Lv.12 330ms */
+export const TETRIS_LEVEL_FLOOR_STEP_MS = 20;
+/** 全等级绝对保底：再快也不低于 300ms/格，4–8 岁也来得及看清 */
+export const TETRIS_FALL_FLOOR_MS = 300;
 export const TETRIS_SCORE_PER_LINE = 10;
 /** 每锁定一块 +1：即使一局总是 3 行，成绩也会随落子数变化 */
 export const TETRIS_SCORE_PER_PIECE = 1;
@@ -37,6 +46,8 @@ export interface ActivePiece {
 
 export interface TetrisState {
   readonly seed: number;
+  /** 本局难度等级（1..12）：只影响重力节奏，level = 1 与旧行为完全一致 */
+  readonly level: number;
   /** 已经抽过几个 7-bag（决定下一袋的种子） */
   readonly bagsDrawn: number;
   /** 当前方块之后的队列，前两个就是右侧预览 */
@@ -183,10 +194,23 @@ function takeFromQueue(
   return { kind, queue: next, bagsDrawn: bags };
 }
 
-export function createTetrisState(seed: number): TetrisState {
+/** createTetrisState 的可选参数：level 缺省 1，旧的单参调用不用改 */
+export interface TetrisOptions {
+  /** 本局难度等级（1..12，越界 / 非数字自动兜底） */
+  readonly level?: number;
+}
+
+/** 等级兜底：NaN → 1；小数向下取整；±Infinity 按上下界钳制，结果永远落在 1..12 */
+export function normalizeTetrisLevel(level: number): number {
+  if (Number.isNaN(level)) return TETRIS_LEVEL_MIN;
+  return Math.min(TETRIS_LEVEL_MAX, Math.max(TETRIS_LEVEL_MIN, Math.floor(level)));
+}
+
+export function createTetrisState(seed: number, options: TetrisOptions = {}): TetrisState {
   const first = takeFromQueue(seed, [], 0);
   return {
     seed,
+    level: normalizeTetrisLevel(options.level ?? TETRIS_LEVEL_MIN),
     bagsDrawn: first.bagsDrawn,
     queue: first.queue,
     board: emptyBoard(),
@@ -200,9 +224,20 @@ export function createTetrisState(seed: number): TetrisState {
   };
 }
 
-/** 时间与随机都从参数进来：这个函数是重力加速的唯一实现 */
-export function fallIntervalForLines(lines: number): number {
-  return Math.max(TETRIS_MIN_FALL_MS, TETRIS_START_FALL_MS - Math.max(0, lines) * TETRIS_FALL_STEP_MS);
+/**
+ * 某一等级下落一行需要的毫秒数：消行越多越快，等级越高整体也越快。
+ * level = 1 时与旧公式逐值相同（1100 起、每行 -180、550 保底）；
+ * 等级提升同时下调“起始间隔”和“保底间隔”，但任何等级都不会低于 TETRIS_FALL_FLOOR_MS（300ms）。
+ */
+export function fallIntervalForLines(lines: number, level = TETRIS_LEVEL_MIN): number {
+  const safeLevel = normalizeTetrisLevel(level);
+  const safeLines = Number.isFinite(lines) ? Math.max(0, Math.floor(lines)) : 0;
+  const start = TETRIS_START_FALL_MS - (safeLevel - 1) * TETRIS_LEVEL_START_STEP_MS;
+  const floor = Math.max(
+    TETRIS_FALL_FLOOR_MS,
+    TETRIS_MIN_FALL_MS - (safeLevel - 1) * TETRIS_LEVEL_FLOOR_STEP_MS,
+  );
+  return Math.max(floor, start - safeLines * TETRIS_FALL_STEP_MS);
 }
 
 /** 方块是否和墙 / 地板 / 已有方块重叠；棋盘上方的空行允许（出生与旋转时会有半格在外） */
@@ -400,7 +435,7 @@ export function advance(state: TetrisState, deltaMs: number): TetrisLockResult {
   let steps = 0;
 
   while (steps < 12) {
-    const interval = fallIntervalForLines(current.lines);
+    const interval = fallIntervalForLines(current.lines, current.level);
     if (accumulator < interval) break;
     accumulator -= interval;
     steps += 1;

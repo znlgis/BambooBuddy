@@ -1,6 +1,7 @@
 import { getTaskSummary } from '@bamboo/content';
 import type { TaskId } from '@bamboo/content';
 import type { ArcadeGameId, CareAction, ClothingSlot, RoomSlot, SaveData, Stars } from '@bamboo/game-kit';
+import { arcadeLevelFor } from '@bamboo/game-kit';
 import {
   arcadeAvailable as isArcadeAvailable,
   arcadeStatus as readArcadeStatus,
@@ -148,11 +149,10 @@ export const useProgress = defineStore('progress', () => {
     () => todaySeconds.value >= REST_SECONDS && !todayRecord.value.restDismissed,
   );
 
-  /** 今天的小门：解锁了没有、三款里哪几款还能玩（界面与 e2e 都从这里读） */
+  /** 今天的小门：解锁了没有、今天玩了几局、还剩几局（界面与 e2e 都从这里读） */
   const arcadeStatus = computed(() => readArcadeStatus(save.value, platform.now()));
   const arcadeUnlocked = computed(() => arcadeStatus.value.unlocked);
-  const arcadePlayed = computed(() => arcadeStatus.value.played);
-  /** 今天触发了隐藏彩蛋：三款无限畅玩 */
+  /** 今天触发了隐藏彩蛋：三款无限畅玩、不限局数 */
   const arcadeUnlimited = computed(() => arcadeStatus.value.unlimited);
 
   /** 今天每个亲昵动作还能不能做（小屋按钮据此禁用并标注"今天已经做过啦"） */
@@ -181,13 +181,18 @@ export const useProgress = defineStore('progress', () => {
     return todayRecord.value.completed.includes(taskId);
   }
 
-  /** 这一款今天还能不能玩（判定只有一份：progress 的 arcadeAvailable，含隐藏彩蛋的无限畅玩） */
+  /** 这一款今天还能不能开局（判定只有一份：progress 的 arcadeAvailable，含隐藏彩蛋的无限畅玩） */
   function arcadeAvailable(gameId: ArcadeGameId): boolean {
     return isArcadeAvailable(save.value, gameId, platform.now());
   }
 
   function arcadeBest(gameId: ArcadeGameId): number {
     return save.value.arcade[gameId]?.best ?? 0;
+  }
+
+  /** 这一款当前的难度等级（1..12）：由该款累计完成局数派生，跨天保留、最多 12 级 */
+  function arcadeLevel(gameId: ArcadeGameId): number {
+    return arcadeLevelFor(save.value.arcade[gameId]?.plays ?? 0);
   }
 
   /** 玩家以前完成过这个任务（玩法里据此决定要不要说"又做到啦"） */
@@ -237,10 +242,10 @@ export const useProgress = defineStore('progress', () => {
     careAvailable,
     arcadeStatus,
     arcadeUnlocked,
-    arcadePlayed,
     arcadeUnlimited,
     arcadeAvailable,
     arcadeBest,
+    arcadeLevel,
     starsFor,
     streakFor,
     hasSticker,

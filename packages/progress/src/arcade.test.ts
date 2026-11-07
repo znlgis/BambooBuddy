@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ProgressStore, SaveData } from '@bamboo/game-kit';
-import { SAVE_SCHEMA_VERSION } from '@bamboo/game-kit';
+import { ARCADE_LEVEL_MAX, SAVE_SCHEMA_VERSION, arcadeLevelFor } from '@bamboo/game-kit';
 import type { TaskSummary } from '@bamboo/content';
 import {
+  ARCADE_DAILY_PLAYS,
   arcadeAvailable,
   arcadeStatus,
   arcadeUnlocked,
@@ -17,6 +18,7 @@ import {
 const T0 = new Date(2026, 9, 20, 9, 0, 0).getTime();
 const DAY = 86_400_000;
 const TODAY = '2026-10-20';
+const TOMORROW_KEY = '2026-10-21';
 
 function task(id: TaskSummary['id']): TaskSummary {
   return {
@@ -58,6 +60,15 @@ async function completed(n: number): Promise<SaveData> {
   const ids: TaskSummary['id'][] = ['brush', 'wash', 'feed', 'dress', 'bath'];
   for (let i = 0; i < n; i += 1) await manager.completeTask(task(ids[i]!), 3);
   return manager.snapshot();
+}
+
+/** 解锁（完成四件小事）之后的 Manager，测试「局数」都在这个基础上跑 */
+async function unlockedManager(now = T0): Promise<ProgressManager> {
+  const manager = new ProgressManager(memoryStore(), () => now);
+  await manager.init();
+  const ids: TaskSummary['id'][] = ['brush', 'wash', 'feed', 'dress'];
+  for (const id of ids) await manager.completeTask(task(id), 3);
+  return manager;
 }
 
 describe('隐藏小游戏：解锁判定', () => {
@@ -110,77 +121,132 @@ describe('隐藏小游戏：解锁判定', () => {
   });
 });
 
-describe('隐藏小游戏：每天每款一次', () => {
+describe('难度等级：由累计局数派生（跨天保留）', () => {
+  it('arcadeLevelFor：每 2 局升一级，1..ARCADE_LEVEL_MAX 封顶', () => {
+    expect(ARCADE_LEVEL_MAX).toBe(12);
+    expect(arcadeLevelFor(0)).toBe(1);
+    expect(arcadeLevelFor(1)).toBe(1);
+    expect(arcadeLevelFor(2)).toBe(2);
+    expect(arcadeLevelFor(3)).toBe(2);
+    expect(arcadeLevelFor(4)).toBe(3);
+    expect(arcadeLevelFor(22)).toBe(ARCADE_LEVEL_MAX);
+    expect(arcadeLevelFor(999)).toBe(ARCADE_LEVEL_MAX);
+  });
+
+  it('坏输入兜底到 1 级，不会出现 NaN / 0 / 负数', () => {
+    expect(arcadeLevelFor(-5)).toBe(1);
+    expect(arcadeLevelFor(Number.NaN)).toBe(1);
+    expect(arcadeLevelFor(Number.POSITIVE_INFINITY)).toBe(ARCADE_LEVEL_MAX);
+  });
+});
+
+describe('隐藏小游戏：每天最多 21 局（三款合计）', () => {
   it('未解锁时 playArcade 被拒绝', async () => {
     const manager = new ProgressManager(memoryStore(), () => T0);
     await manager.init();
     const outcome = await manager.playArcade('popstar', 30);
     expect(outcome.ok).toBe(false);
     expect(outcome.reason).toBe('notUnlocked');
+    expect(outcome.level).toBe(1);
+    expect(outcome.playsToday).toBe(0);
   });
 
-  it('解锁后可以玩，记录最高分 / 次数 / 今天玩过；第二次被拒绝', async () => {
-    const store = memoryStore();
-    const manager = new ProgressManager(store, () => T0);
-    await manager.init();
-    const ids: TaskSummary['id'][] = ['brush', 'wash', 'feed', 'dress'];
-    for (const id of ids) await manager.completeTask(task(id), 3);
-
+  it('解锁后可以玩：最高分 / 总次数 / 今天玩过 / 今天局数 / 难度都记录', async () => {
+    const manager = await unlockedManager();
     const first = await manager.playArcade('popstar', 42);
     expect(first.ok).toBe(true);
     expect(first.best).toBe(42);
+    expect(first.plays).toBe(1);
+    expect(first.level).toBe(1);
+    expect(first.playsToday).toBe(1);
+
     const save = manager.snapshot();
     expect(save.arcade.popstar.best).toBe(42);
     expect(save.arcade.popstar.plays).toBe(1);
     expect(save.arcade.popstar.lastPlayedDay).toBe(TODAY);
     expect(save.days[TODAY]!.arcade).toEqual(['popstar']);
-    expect(arcadeStatus(save, T0).remaining).toEqual(['bounce', 'tetris']);
+    expect(save.days[TODAY]!.arcadePlays).toBe(1);
 
-    const second = await manager.playArcade('popstar', 99);
-    expect(second.ok).toBe(false);
-    expect(second.reason).toBe('already');
-    // 最高分不会被第二次（被拒绝的）覆盖
-    expect(manager.snapshot().arcade.popstar.best).toBe(42);
+    const status = arcadeStatus(save, T0);
+    expect(status.playsToday).toBe(1);
+    expect(status.dailyLimit).toBe(ARCADE_DAILY_PLAYS);
+    expect(status.remainingPlays).toBe(ARCADE_DAILY_PLAYS - 1);
   });
 
-  it('三款互不影响：同一天每款各一次', async () => {
-    const manager = new ProgressManager(memoryStore(), () => T0);
-    await manager.init();
-    for (const id of ['brush', 'wash', 'feed', 'dress'] as const) await manager.completeTask(task(id), 3);
-    expect((await manager.playArcade('popstar', 10)).ok).toBe(true);
-    expect((await manager.playArcade('bounce', 20)).ok).toBe(true);
-    expect((await manager.playArcade('tetris', 30)).ok).toBe(true);
-    expect(arcadeStatus(manager.snapshot(), T0).remaining).toEqual([]);
+  it('三款共用一个额度：连续玩 21 局都成功，第 22 局返回 limit', async () => {
+    const manager = await unlockedManager();
+    const ids = ['popstar', 'bounce', 'tetris'] as const;
+    for (let i = 0; i < ARCADE_DAILY_PLAYS; i += 1) {
+      const outcome = await manager.playArcade(ids[i % ids.length]!, 10 + i);
+      expect(outcome.ok, '第 ' + (i + 1) + ' 局应该成功').toBe(true);
+      expect(outcome.playsToday).toBe(i + 1);
+    }
+
+    const blocked = await manager.playArcade('popstar', 99);
+    expect(blocked.ok).toBe(false);
+    expect(blocked.reason).toBe('limit');
+    expect(blocked.playsToday).toBe(ARCADE_DAILY_PLAYS);
+
+    const save = manager.snapshot();
+    expect(save.days[TODAY]!.arcadePlays).toBe(ARCADE_DAILY_PLAYS);
+    expect(save.days[TODAY]!.arcade.slice().sort()).toEqual(['bounce', 'popstar', 'tetris']);
+    expect(arcadeStatus(save, T0).remainingPlays).toBe(0);
+    expect(arcadeAvailable(save, 'popstar', T0)).toBe(false);
+    // 被拒绝的那一局不写档：三款总局数正好 7
+    const totalPlays = save.arcade.popstar.plays + save.arcade.bounce.plays + save.arcade.tetris.plays;
+    expect(totalPlays).toBe(ARCADE_DAILY_PLAYS);
   });
 
-  it('第二天 00:00 之后又能玩，最高分保留', async () => {
-    const store = memoryStore();
-    const manager = new ProgressManager(store, () => T0);
-    await manager.init();
-    for (const id of ['brush', 'wash', 'feed', 'dress'] as const) await manager.completeTask(task(id), 3);
-    await manager.playArcade('popstar', 55);
+  it('同一款可以反复玩（只是占当天额度）：局数增加，难度按 2 局一级升', async () => {
+    const manager = await unlockedManager();
+    for (let i = 0; i < 4; i += 1) {
+      const outcome = await manager.playArcade('popstar', 20 + i);
+      expect(outcome.ok).toBe(true);
+      expect(outcome.level).toBe(arcadeLevelFor(i + 1));
+    }
+    const save = manager.snapshot();
+    expect(save.arcade.popstar.plays).toBe(4);
+    expect(save.arcade.popstar.best).toBe(23);
+    expect(save.days[TODAY]!.arcade).toEqual(['popstar']);
+    expect(save.days[TODAY]!.arcadePlays).toBe(4);
+  });
+
+  it('第二天 00:00 局数归零，但成绩与难度接着昨天继续', async () => {
+    const manager = await unlockedManager();
+    for (let i = 0; i < 4; i += 1) await manager.playArcade('popstar', 10 + i);
 
     const tomorrow = T0 + DAY;
-    const tomorrowKey = '2026-10-21';
-    // 新的一天：先完成 4 件（真实流程），再玩
     await manager.refresh(tomorrow);
-    for (const id of ['brush', 'wash', 'feed', 'dress'] as const) await manager.completeTask(task(id), 3, tomorrow);
-    expect(arcadeStatus(manager.snapshot(), tomorrow).unlocked).toBe(true);
-    const again = await manager.playArcade('popstar', 60, tomorrow);
+    // 新的一天：要重新完成 4 件小事才解锁
+    expect(arcadeStatus(manager.snapshot(), tomorrow).unlocked).toBe(false);
+    for (const id of ['brush', 'wash', 'feed', 'dress'] as const) {
+      await manager.completeTask(task(id), 3, tomorrow);
+    }
+
+    const status = arcadeStatus(manager.snapshot(), tomorrow);
+    expect(status.unlocked).toBe(true);
+    expect(status.playsToday).toBe(0);
+    expect(status.remainingPlays).toBe(ARCADE_DAILY_PLAYS);
+    // 成绩与难度是跨天记录，不清零
+    expect(manager.snapshot().arcade.popstar.plays).toBe(4);
+    expect(manager.snapshot().arcade.popstar.best).toBe(13);
+
+    const again = await manager.playArcade('popstar', 70, tomorrow);
     expect(again.ok).toBe(true);
-    expect(again.best).toBe(60);
-    expect(manager.snapshot().arcade.popstar.plays).toBe(2);
-    expect(manager.snapshot().days[tomorrowKey]!.arcade).toEqual(['popstar']);
+    expect(again.best).toBe(70);
+    expect(again.plays).toBe(5);
+    expect(again.level).toBe(arcadeLevelFor(5));
+    expect(again.playsToday).toBe(1);
+    expect(manager.snapshot().days[TOMORROW_KEY]!.arcadePlays).toBe(1);
   });
 
-  it('中途退出不写存档：没有 playArcade 调用就不消耗次数', async () => {
-    const manager = new ProgressManager(memoryStore(), () => T0);
-    await manager.init();
-    for (const id of ['brush', 'wash', 'feed', 'dress'] as const) await manager.completeTask(task(id), 3);
+  it('中途退出不写存档：没有 playArcade 调用就不消耗额度', async () => {
+    const manager = await unlockedManager();
     const before = manager.snapshot();
     expect(arcadeAvailable(before, 'popstar', T0)).toBe(true);
     // 场景没发 arcade:complete → 什么都没变
     expect(arcadeAvailable(manager.snapshot(), 'popstar', T0)).toBe(true);
+    expect(manager.snapshot().days[TODAY]!.arcadePlays).toBe(0);
   });
 
   it('死数据的 id 被识别为非法，playArcade 返回 unknown', async () => {
@@ -194,7 +260,7 @@ describe('隐藏小游戏：每天每款一次', () => {
   });
 });
 
-describe('隐藏彩蛋：竹林小路（当天无限畅玩）', () => {
+describe('隐藏彩蛋：竹林小路（当天无限畅玩、不设局数上限）', () => {
   it('没完成四件小事也能触发：小门打开、三款都能玩', async () => {
     const manager = new ProgressManager(memoryStore(), () => T0);
     await manager.init();
@@ -220,29 +286,32 @@ describe('隐藏彩蛋：竹林小路（当天无限畅玩）', () => {
     expect((await manager.unlockArcadeSecret()).already).toBe(true);
   });
 
-  it('同一款可以一直玩：第二次仍然成功，总次数与最高分照常累计', async () => {
+  it('同一款可以一局接一局地玩：超过 21 局也不拦，难度持续上涨', async () => {
     const manager = new ProgressManager(memoryStore(), () => T0);
     await manager.init();
     await manager.unlockArcadeSecret();
 
-    expect((await manager.playArcade('popstar', 30)).ok).toBe(true);
-    const second = await manager.playArcade('popstar', 55);
-    expect(second.ok).toBe(true);
-    expect(second.best).toBe(55);
-    expect(manager.snapshot().arcade.popstar.plays).toBe(2);
-    expect(manager.snapshot().days[TODAY]!.arcade).toEqual(['popstar']);
-
-    const third = await manager.playArcade('popstar', 20);
-    expect(third.ok).toBe(true);
-    expect(third.best).toBe(55);
-    expect(manager.snapshot().arcade.popstar.plays).toBe(3);
+    const total = ARCADE_DAILY_PLAYS + 2;
+    for (let i = 0; i < total; i += 1) {
+      const outcome = await manager.playArcade('popstar', 30 + i);
+      expect(outcome.ok, '无限畅玩第 ' + (i + 1) + ' 局应该成功').toBe(true);
+      expect(outcome.playsToday).toBe(i + 1);
+      expect(outcome.level).toBe(arcadeLevelFor(i + 1));
+    }
+    const save = manager.snapshot();
+    expect(save.arcade.popstar.plays).toBe(total);
+    expect(save.days[TODAY]!.arcadePlays).toBe(total);
+    // 局数上限只管普通模式：无限畅玩时 arcadeAvailable 一直是 true
+    expect(arcadeAvailable(save, 'bounce', T0)).toBe(true);
+    expect(arcadeStatus(save, T0).remainingPlays).toBe(0);
+    expect(arcadeStatus(save, T0).unlimited).toBe(true);
   });
 
-  it('无限畅玩只限当天：第二天没触发就又回到「每款一次」', async () => {
+  it('无限畅玩只限当天：第二天回到 21 局上限，难度记录保留', async () => {
     const manager = new ProgressManager(memoryStore(), () => T0);
     await manager.init();
     await manager.unlockArcadeSecret();
-    await manager.playArcade('popstar', 40);
+    for (let i = 0; i < ARCADE_DAILY_PLAYS + 1; i += 1) await manager.playArcade('popstar', 40 + i);
 
     const tomorrow = T0 + DAY;
     await manager.refresh(tomorrow);
@@ -250,13 +319,18 @@ describe('隐藏彩蛋：竹林小路（当天无限畅玩）', () => {
     expect(manager.arcadeStatus(tomorrow).unlocked).toBe(false);
     expect(arcadeAvailable(manager.snapshot(), 'popstar', tomorrow)).toBe(false);
 
-    // 第二天完成四件小事后：每款一次的限制回来了
+    // 第二天完成四件小事后：普通模式每天 21 局，难度与成绩继续
     for (const id of ['brush', 'wash', 'feed', 'dress'] as const) {
       await manager.completeTask(task(id), 3, tomorrow);
     }
     expect(manager.arcadeStatus(tomorrow).unlocked).toBe(true);
     expect(manager.arcadeStatus(tomorrow).unlimited).toBe(false);
-    expect((await manager.playArcade('bounce', 20, tomorrow)).ok).toBe(true);
+    expect(manager.arcadeStatus(tomorrow).playsToday).toBe(0);
+    expect(manager.snapshot().arcade.popstar.plays).toBe(ARCADE_DAILY_PLAYS + 1);
+
+    for (let i = 0; i < ARCADE_DAILY_PLAYS; i += 1) {
+      expect((await manager.playArcade('bounce', 20, tomorrow)).ok).toBe(true);
+    }
     expect((await manager.playArcade('bounce', 30, tomorrow)).ok).toBe(false);
   });
 
@@ -278,6 +352,7 @@ describe('隐藏小游戏：存档迁移与兜底', () => {
     delete old.arcade;
     const day = (old.days as Record<string, unknown>)[TODAY] as Record<string, unknown>;
     delete day.arcade;
+    delete day.arcadePlays;
     (old.pet as Record<string, unknown>).shoots = 88;
 
     const migrated = migrate(old, T0);
@@ -285,6 +360,19 @@ describe('隐藏小游戏：存档迁移与兜底', () => {
     expect(migrated.pet.shoots).toBe(88);
     expect(migrated.arcade.popstar).toEqual({ best: 0, plays: 0, lastPlayedDay: null });
     expect(migrated.days[TODAY]!.arcade).toEqual([]);
+    expect(migrated.days[TODAY]!.arcadePlays).toBe(0);
+  });
+
+  it('v3 老档没有 arcadePlays：按旧规则「今天玩过几款」兜底，不白送额度', () => {
+    const old = emptySave(T0) as unknown as Record<string, unknown>;
+    old.schemaVersion = 3;
+    const day = (old.days as Record<string, unknown>)[TODAY] as Record<string, unknown>;
+    day.arcade = ['popstar', 'bounce'];
+    delete day.arcadePlays;
+
+    const migrated = migrate(old, T0);
+    expect(migrated.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
+    expect(migrated.days[TODAY]!.arcadePlays).toBe(2);
   });
 
   it('坏 id / 坏成绩逐条兜底，不连累整份存档', () => {
@@ -292,6 +380,7 @@ describe('隐藏小游戏：存档迁移与兜底', () => {
     save.arcade = { popstar: { best: 12, plays: 'x', lastPlayedDay: 'nope' }, bounce: 'bad' };
     const day = (save.days as Record<string, unknown>)[TODAY] as Record<string, unknown>;
     day.arcade = ['popstar', 'mario', 'popstar'];
+    day.arcadePlays = 'bad';
     const migrated = migrate(save, T0);
     expect(migrated.arcade.popstar.best).toBe(12);
     expect(migrated.arcade.popstar.plays).toBe(0);
@@ -299,14 +388,20 @@ describe('隐藏小游戏：存档迁移与兜底', () => {
     expect(migrated.arcade.bounce).toEqual({ best: 0, plays: 0, lastPlayedDay: null });
     expect(migrated.arcade.tetris).toEqual({ best: 0, plays: 0, lastPlayedDay: null });
     expect(migrated.days[TODAY]!.arcade).toEqual(['popstar']);
+    // arcadePlays 坏值：按去重后的 arcade 条数兜底
+    expect(migrated.days[TODAY]!.arcadePlays).toBe(1);
   });
 
-  it('withArcadePlay 是纯函数：不改原对象，最高分只增不减', () => {
+  it('withArcadePlay 是纯函数：不改原对象，最高分只增不减，今天局数 +1', () => {
     const save = emptySave(T0);
     const next = withArcadePlay(save, 'popstar', 30, T0);
     expect(save.arcade.popstar.best).toBe(0);
+    expect(save.days[TODAY]!.arcadePlays).toBe(0);
     expect(next.arcade.popstar.best).toBe(30);
+    expect(next.days[TODAY]!.arcadePlays).toBe(1);
     const lower = withArcadePlay(next, 'popstar', 5, T0);
     expect(lower.arcade.popstar.best).toBe(30);
+    expect(lower.arcade.popstar.plays).toBe(2);
+    expect(lower.days[TODAY]!.arcadePlays).toBe(2);
   });
 });

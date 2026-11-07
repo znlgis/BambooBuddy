@@ -1,6 +1,18 @@
 import type { DebugOptions, PlatformServices } from './contract';
 import type { ArcadeGameId, Locale } from './contract';
 
+/** 难度等级：每完成 ARCADE_LEVEL_EVERY_PLAYS 局升一级，最高 ARCADE_LEVEL_MAX 级 */
+export const ARCADE_LEVEL_EVERY_PLAYS = 2;
+/** 难度封顶：到顶后不再变难，但无限畅玩仍然可以一直玩 */
+export const ARCADE_LEVEL_MAX = 12;
+
+/** 由某款游戏累计完成的局数算难度等级（1..ARCADE_LEVEL_MAX）；存档、界面与游戏共用这一份 */
+export function arcadeLevelFor(plays: number): number {
+  // NaN / 负数当 0（1 级）；+Infinity 自然封顶到最高级
+  const safePlays = Number.isNaN(plays) ? 0 : Math.max(0, Math.floor(plays));
+  return Math.min(ARCADE_LEVEL_MAX, 1 + Math.floor(safePlays / ARCADE_LEVEL_EVERY_PLAYS));
+}
+
 /**
  * 隐藏小游戏的契约（不含 Phaser、不含 TaskId）。
  *
@@ -31,6 +43,8 @@ export interface ArcadeContext {
   services: PlatformServices;
   locale: Locale;
   reducedMotion: boolean;
+  /** 本局难度等级（1..ARCADE_LEVEL_MAX）：外壳按该游戏累计局数传入，游戏逻辑据此调参 */
+  level: number;
   /** ?autoplay=1 自动通关 / ?instant=1 跳过过场（与日常玩法同一套开关） */
   debug?: DebugOptions;
   emit<K extends keyof ArcadeEventMap>(type: K, payload: ArcadeEventMap[K]): void;

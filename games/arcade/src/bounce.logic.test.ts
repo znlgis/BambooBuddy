@@ -5,6 +5,10 @@ import {
   BOUNCE_COMBO_BONUS,
   BOUNCE_DROP_EVERY_SHOTS,
   BOUNCE_GRID,
+  BOUNCE_LEVEL_MAX,
+  BOUNCE_LEVEL_MIN,
+  BOUNCE_MAX_BLOCKS,
+  BOUNCE_MAX_ROWS,
   BOUNCE_ROUND_PAUSE_MS,
   BOUNCE_STARS_PER_BLOCK,
   BOUNCE_STEP_MS,
@@ -12,10 +16,13 @@ import {
   advanceBounce,
   aimToward,
   anticipate,
+  bounceRoundsForLevel,
+  buildRoundBlocks,
   canFire,
   createBounceGame,
   fireBall,
   launchPointFor,
+  normalizeBounceLevel,
   playAutoplay,
   predictAim,
   remainingBlocks,
@@ -335,6 +342,104 @@ describe('弹一弹：autoplay 无头直达', () => {
       expect(result.score).toBe(result.state.stars + result.state.comboBonus);
       expect(result.score).toBeGreaterThanOrEqual(27 * BOUNCE_STARS_PER_BLOCK);
       expect(result.steps).toBeLessThan(5000);
+    }
+  });
+});
+
+describe('弹一弹：难度等级（level）', () => {
+  /** 旧版写死的三轮配置：level=1 必须与它逐项相同（老存档 / 老测试的行为不变） */
+  const LEVEL_ONE_ROUNDS = [
+    { blocks: 6, bouncy: 2 },
+    { blocks: 9, bouncy: 2 },
+    { blocks: 12, bouncy: 2 },
+  ];
+
+  it('level=1 与旧配置一致，且默认开局就是 level 1', () => {
+    expect(bounceRoundsForLevel(1)).toEqual(LEVEL_ONE_ROUNDS);
+    expect(bounceRoundsForLevel(BOUNCE_LEVEL_MIN)).toEqual(LEVEL_ONE_ROUNDS);
+    expect(createBounceGame(2026).level).toBe(1);
+    expect(createBounceGame(2026, {}).level).toBe(1);
+    expect(createBounceGame(2026).blocks).toHaveLength(LEVEL_ONE_ROUNDS[0]!.blocks);
+  });
+
+  it('方块数随等级单调不减，且始终不超棋盘容量', () => {
+    const previous = LEVEL_ONE_ROUNDS.map(() => 0);
+    for (let level = BOUNCE_LEVEL_MIN; level <= BOUNCE_LEVEL_MAX; level += 1) {
+      const rounds = bounceRoundsForLevel(level);
+      expect(rounds).toHaveLength(LEVEL_ONE_ROUNDS.length);
+      rounds.forEach((config, index) => {
+        const base = LEVEL_ONE_ROUNDS[index]!;
+        expect(config.blocks).toBeGreaterThanOrEqual(previous[index]!);
+        expect(config.blocks).toBeGreaterThanOrEqual(base.blocks);
+        expect(config.blocks).toBeLessThanOrEqual(BOUNCE_MAX_BLOCKS);
+        expect(Math.ceil(config.blocks / BOUNCE_GRID.columns)).toBeLessThanOrEqual(BOUNCE_MAX_ROWS);
+        // 弹弹方块数量保持不变：难度只从方块数来，level=1 才可能逐帧一致
+        expect(config.bouncy).toBe(base.bouncy);
+        previous[index] = config.blocks;
+      });
+    }
+    // 最高等级确实更难：每一轮都比 level=1 多
+    const top = bounceRoundsForLevel(BOUNCE_LEVEL_MAX);
+    top.forEach((config, index) => {
+      expect(config.blocks).toBeGreaterThan(LEVEL_ONE_ROUNDS[index]!.blocks);
+    });
+  });
+
+  it('等级越界兜底：0 / 负数 / NaN / 无穷 → 1，超过上限 → 12', () => {
+    expect(normalizeBounceLevel(0)).toBe(1);
+    expect(normalizeBounceLevel(-3)).toBe(1);
+    expect(normalizeBounceLevel(Number.NaN)).toBe(1);
+    expect(normalizeBounceLevel(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(normalizeBounceLevel(BOUNCE_LEVEL_MAX + 1)).toBe(BOUNCE_LEVEL_MAX);
+    expect(normalizeBounceLevel(999)).toBe(BOUNCE_LEVEL_MAX);
+
+    // 越界值传进 createBounceGame 也按兜底后的等级开局，不会卡在 0 或 13
+    expect(createBounceGame(7, { level: 0 }).level).toBe(1);
+    expect(createBounceGame(7, { level: -9 }).level).toBe(1);
+    expect(createBounceGame(7, { level: Number.NaN }).level).toBe(1);
+    expect(createBounceGame(7, { level: 999 }).level).toBe(BOUNCE_LEVEL_MAX);
+    expect(createBounceGame(7, { level: 999 }).blocks).toHaveLength(
+      bounceRoundsForLevel(BOUNCE_LEVEL_MAX)[0]!.blocks,
+    );
+  });
+
+  it('最高等级每轮都摆得进棋盘：5 行以内、不越界、开局不贴开花线', () => {
+    for (const level of [1, 6, BOUNCE_LEVEL_MAX]) {
+      const rounds = bounceRoundsForLevel(level);
+      for (let round = 1; round <= rounds.length; round += 1) {
+        const blocks = buildRoundBlocks(4242, round, level);
+        expect(blocks).toHaveLength(rounds[round - 1]!.blocks);
+        expect(blocks.filter((block) => block.kind === 'bouncy')).toHaveLength(
+          rounds[round - 1]!.bouncy,
+        );
+        // id 不能重复：同轮里布局位置唯一
+        expect(new Set(blocks.map((block) => block.id)).size).toBe(blocks.length);
+        for (const block of blocks) {
+          expect(block.row).toBeGreaterThanOrEqual(0);
+          expect(block.row).toBeLessThan(BOUNCE_MAX_ROWS);
+          expect(block.y).toBeGreaterThan(BOUNCE_BOARD.top);
+          expect(block.y).toBeLessThan(BOUNCE_GRID.flowerLine);
+          expect(block.x - block.w / 2).toBeGreaterThanOrEqual(BOUNCE_BOARD.left);
+          expect(block.x + block.w / 2).toBeLessThanOrEqual(BOUNCE_BOARD.right);
+        }
+      }
+    }
+  });
+
+  it('level=12 时 autoplay 仍能一局跑完 3 轮（高等级不卡死、不失败）', () => {
+    const rounds = bounceRoundsForLevel(BOUNCE_LEVEL_MAX);
+    const expectStars =
+      rounds.reduce((sum, config) => sum + config.blocks, 0) * BOUNCE_STARS_PER_BLOCK;
+    for (const seed of [2026, 7, 99]) {
+      const result = playAutoplay(seed, { level: BOUNCE_LEVEL_MAX });
+      expect(result.finished).toBe(true);
+      expect(result.state.finished).toBe(true);
+      expect(result.rounds.map((round) => round.round)).toEqual([1, 2, 3]);
+      expect(result.rounds.map((round) => round.blocks)).toEqual(rounds.map((config) => config.blocks));
+      expect(result.state.round).toBe(3);
+      // 每块 3 颗星：碎掉或开花都会收走，一块不少
+      expect(result.state.stars).toBe(expectStars);
+      expect(result.steps).toBeLessThan(10_000);
     }
   });
 });

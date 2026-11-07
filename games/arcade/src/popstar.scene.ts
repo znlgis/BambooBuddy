@@ -50,7 +50,8 @@ const FAMILY_COLORS: readonly number[] = [THEME.warmRed, THEME.gold, THEME.water
  * autoplay 每 120ms 用 largestGroup 选最大组，再调用与真实点击完全相同的 popGroup。
  */
 class PopstarScene extends ArcadeScene {
-  private state: PopstarState;
+  private readonly seed: number;
+  private state!: PopstarState;
   private boardGfx: Phaser.GameObjects.Graphics | null = null;
   private basketGfx: Phaser.GameObjects.Graphics | null = null;
   private hintGfx: Phaser.GameObjects.Graphics | null = null;
@@ -67,13 +68,17 @@ class PopstarScene extends ArcadeScene {
 
   constructor(ctx: ArcadeContext) {
     super('popstar', ctx);
-    const seed = hashString(`${ctx.manifest.id}:${ctx.services.now()}`);
-    this.state = createPopstarState(seed);
+    // 同一次打开可复现：种子只取决于游戏 id + 打开这一局的墙钟
+    this.seed = hashString(`${ctx.manifest.id}:${ctx.services.now()}`);
   }
 
   create(): void {
+    // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留）：只影响每轮目标，棋盘与 level=1 完全一样
+    this.state = createPopstarState(this.seed, { level: this.level });
     this.drawBackdrop();
     this.drawHeader(this.t('arcade.popstar.name'), this.t('arcade.popstar.desc'));
+    // 等级药丸放标题条右上：中间 HUD（轮次 / 目标 / 分数）和下面整块棋盘都占满了，默认位置会压住分数
+    this.drawLevelPill(this.W - 100, 52);
     this.drawBoardFrame();
     this.boardGfx = this.add.graphics().setDepth(4);
     this.drawHud();
@@ -367,6 +372,8 @@ class PopstarScene extends ArcadeScene {
 
   private syncHud(): void {
     const state = this.state;
+    // 目标跟着本局等级走：高等级只是要收集更多，永远凑得够（上限远低于一局能收集的 96 颗）
+    const goal = goalForRound(state.round, state.level);
     this.roundText?.setText(
       this.t('arcade.roundOf', { n: state.round + 1, total: POPSTAR_ROUNDS }),
     );
@@ -377,8 +384,8 @@ class PopstarScene extends ArcadeScene {
     );
     this.scoreText?.setText(String(state.score));
     // 竹筐最多画满；超出目标的星星仍然计分，但不让「25 / 24」这种数字吓到孩子
-    const basketCount = Math.min(state.collected, goalForRound(state.round));
-    this.basketLabel?.setText(`${basketCount} / ${goalForRound(state.round)}`);
+    const basketCount = Math.min(state.collected, goal);
+    this.basketLabel?.setText(`${basketCount} / ${goal}`);
     this.drawBasket();
   }
 

@@ -61,12 +61,51 @@ export interface BounceRoundConfig {
   readonly bouncy: number;
 }
 
-/** 一局 3 轮：6 / 9 / 12 个方块，每轮混 2 个弹弹方块 */
+/** 一局 3 轮：6 / 9 / 12 个方块，每轮混 2 个弹弹方块（这是 level=1 的基线） */
 export const BOUNCE_ROUNDS: readonly BounceRoundConfig[] = [
   { blocks: 6, bouncy: 2 },
   { blocks: 9, bouncy: 2 },
   { blocks: 12, bouncy: 2 },
 ];
+
+/** 难度等级范围：与外壳 arcadeLevelFor 的 1..12 对齐；越界一律夹回区间内 */
+export const BOUNCE_LEVEL_MIN = 1;
+export const BOUNCE_LEVEL_MAX = 12;
+
+/**
+ * 棋盘最多摆 5 行：再往下排第 6 行，方块中心已经到 400 + 5×100 = 900，
+ * 第 6 发一沉底就贴到开花线（950）直接结束本轮——那是"变简单"不是"变难"，所以行数封顶。
+ * 容量 = 4 列 × 5 行 = 20。
+ */
+export const BOUNCE_MAX_ROWS = 5;
+
+/**
+ * 每轮方块硬上限：容量 20 里只取 18，最底一行留 3 块（4/4/4/3/3）。
+ * 满 20 时最底一行 4 块会把下半个棋盘整排封死，所在行与行之间的 25px 缝隙
+ * 又小于球直径 32px，球只能硬撞；留个缺口，球还能从旁边绕上去，连撞更顺。
+ */
+export const BOUNCE_MAX_BLOCKS = 18;
+
+/** 等级越界兜底：非有限数 / 小于 1 / 大于 12 都夹到最近的合法等级，level=1 永远等于旧行为 */
+export function normalizeBounceLevel(level: number): number {
+  if (!Number.isFinite(level)) return BOUNCE_LEVEL_MIN;
+  return Math.max(BOUNCE_LEVEL_MIN, Math.min(BOUNCE_LEVEL_MAX, Math.floor(level)));
+}
+
+/**
+ * 难度等级 → 三轮配置。
+ * level=1 原样返回 BOUNCE_ROUNDS（6 / 9 / 12 块，与旧版完全一致）；
+ * 之后每升一级，每轮各 +1 块，按 BOUNCE_MAX_BLOCKS 封顶：越多越难，但永远摆得进棋盘。
+ * 弹弹方块数量保持不变——它只加球速不加压力，不动它就不用担心高等级失控。
+ */
+export function bounceRoundsForLevel(level: number): readonly BounceRoundConfig[] {
+  const extra = normalizeBounceLevel(level) - BOUNCE_LEVEL_MIN;
+  if (extra === 0) return BOUNCE_ROUNDS;
+  return BOUNCE_ROUNDS.map((config) => ({
+    blocks: Math.min(BOUNCE_MAX_BLOCKS, config.blocks + extra),
+    bouncy: config.bouncy,
+  }));
+}
 
 export interface Vec2 {
   readonly x: number;
@@ -112,6 +151,8 @@ export interface BounceBall {
 
 export interface BounceState {
   readonly seed: number;
+  /** 本局难度等级（1..BOUNCE_LEVEL_MAX）：外壳按该款累计完成局数传入，跨天保留 */
+  readonly level: number;
   /** 1..BOUNCE_ROUNDS.length */
   readonly round: number;
   readonly blocks: readonly BounceBlock[];
@@ -174,6 +215,8 @@ export interface BounceAnticipate {
 export interface BounceAutoplayOptions {
   readonly maxSteps?: number;
   readonly stepMs?: number;
+  /** 本局难度等级（1..BOUNCE_LEVEL_MAX），缺省 1 */
+  readonly level?: number;
 }
 
 export interface BounceRoundSnapshot {
@@ -296,10 +339,17 @@ export function anticipate(state: BounceState): BounceAnticipate {
   return { block, aim: aimToward({ x: block.x, y: block.y }) };
 }
 
-export function createBounceGame(seed: number): BounceState {
+/** createBounceGame 的可选项；不传 = 旧行为（level 1） */
+export interface BounceGameOptions {
+  /** 本局难度等级（1..BOUNCE_LEVEL_MAX）；缺省 1，与旧版逐帧一致 */
+  readonly level?: number;
+}
+
+export function createBounceGame(seed: number, options: BounceGameOptions = {}): BounceState {
   return startRound(
     {
       seed: seed >>> 0,
+      level: normalizeBounceLevel(options.level ?? BOUNCE_LEVEL_MIN),
       round: 1,
       blocks: [],
       balls: [],
@@ -500,7 +550,9 @@ export function predictAim(
 export function playAutoplay(seed: number, options: BounceAutoplayOptions = {}): BounceAutoplayResult {
   const stepMs = Math.max(1, options.stepMs ?? BOUNCE_STEP_MS);
   const maxSteps = Math.max(1, options.maxSteps ?? 20_000);
-  let state = createBounceGame(seed);
+  let state = createBounceGame(seed, {
+    level: normalizeBounceLevel(options.level ?? BOUNCE_LEVEL_MIN),
+  });
   const rounds: BounceRoundSnapshot[] = [snapshotRound(state)];
   let steps = 0;
 
@@ -523,7 +575,7 @@ function startRound(state: BounceState, round: number): BounceState {
   return {
     ...state,
     round,
-    blocks: buildRoundBlocks(state.seed, round),
+    blocks: buildRoundBlocks(state.seed, round, state.level),
     balls: [],
     shotsThisRound: 0,
     drops: 0,
@@ -535,8 +587,9 @@ function startRound(state: BounceState, round: number): BounceState {
   };
 }
 
-function buildRoundBlocks(seed: number, round: number): BounceBlock[] {
-  const config = BOUNCE_ROUNDS[round - 1];
+/** 内部实现；导出只为让单测直接检查各等级 / 各轮的棋盘布局（场景不要绕开 state 调用它） */
+export function buildRoundBlocks(seed: number, round: number, level: number): BounceBlock[] {
+  const config = bounceRoundsForLevel(level)[round - 1];
   if (config === undefined) return [];
 
   // 每轮一个独立的确定性种子：同一局里每轮布局不同，重开能复现

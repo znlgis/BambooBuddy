@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { ArcadeContext, SfxKey } from '@bamboo/game-kit';
+import { ARCADE_LEVEL_MAX } from '@bamboo/game-kit';
 import { createTranslator } from '@bamboo/i18n';
 import type { MessageKey, MessageParams, Translator } from '@bamboo/i18n';
 import {
@@ -73,6 +74,13 @@ export abstract class ArcadeScene extends Phaser.Scene {
     return this.ctx.debug?.instant === true;
   }
 
+  /** 本局难度等级（1..ARCADE_LEVEL_MAX）：逻辑层与 HUD 共用这一份，坏值兜底、越界夹到上限 */
+  protected get level(): number {
+    const raw = this.ctx.level;
+    if (!Number.isFinite(raw)) return 1;
+    return Math.min(ARCADE_LEVEL_MAX, Math.max(1, Math.floor(raw)));
+  }
+
   protected get reducedMotion(): boolean {
     return this.ctx.reducedMotion;
   }
@@ -117,6 +125,16 @@ export abstract class ArcadeScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(21);
     }
+  }
+
+  /** 难度药丸：三款游戏共用；默认放标题条右下，场景可传坐标避开自己的 HUD */
+  protected drawLevelPill(x = this.W - 108, y = 196): void {
+    this.addPill(x, y, this.t('arcade.levelShort', { n: this.level }), {
+      color: THEME.bamboo,
+      textColor: CSS.card,
+      fontSize: 30,
+      depth: 30,
+    });
   }
 
   /** 一枚圆角药丸（HUD 数字、轮次、连消提示都用它） */

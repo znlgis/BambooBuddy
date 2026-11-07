@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   PIECE_KINDS,
   TETRIS_COLS,
+  TETRIS_FALL_FLOOR_MS,
   TETRIS_GOAL_LINES,
+  TETRIS_LEVEL_MAX,
+  TETRIS_LEVEL_MIN,
   TETRIS_MIN_FALL_MS,
   TETRIS_ROWS,
   TETRIS_SCORE_PER_LINE,
@@ -17,6 +20,7 @@ import {
   ghostY,
   hardDrop,
   lockPiece,
+  normalizeTetrisLevel,
   planPlacement,
   shapeCells,
   stepDown,
@@ -335,5 +339,148 @@ describe('AI：autoplay 的落点规划', () => {
         expect(occupied.has(x + ',' + y)).toBe(false);
       }
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 难度等级：level 只调重力节奏，level = 1 与旧行为完全一致
+ * ------------------------------------------------------------------ */
+describe('难度等级：fallIntervalForLines', () => {
+  it('level = 1 与旧公式逐值相同', () => {
+    for (const lines of [0, 1, 2, 3, 5, 10, 99]) {
+      expect(fallIntervalForLines(lines, 1)).toBe(fallIntervalForLines(lines));
+    }
+    expect(fallIntervalForLines(0, 1)).toBe(1100);
+    expect(fallIntervalForLines(1, 1)).toBe(920);
+    expect(fallIntervalForLines(3, 1)).toBe(560);
+    expect(fallIntervalForLines(99, 1)).toBe(TETRIS_MIN_FALL_MS);
+    expect(fallIntervalForLines(0)).toBe(1100);
+  });
+
+  it('同一消行数下等级越高间隔越短，且任何等级都不低于 300ms', () => {
+    for (const lines of [0, 1, 2, 3, 6, 12]) {
+      let previous = Number.POSITIVE_INFINITY;
+      for (let level = TETRIS_LEVEL_MIN; level <= TETRIS_LEVEL_MAX; level += 1) {
+        const interval = fallIntervalForLines(lines, level);
+        expect(interval).toBeLessThan(previous);
+        expect(interval).toBeGreaterThanOrEqual(TETRIS_FALL_FLOOR_MS);
+        expect(interval).toBeGreaterThanOrEqual(300);
+        previous = interval;
+      }
+      expect(fallIntervalForLines(lines, TETRIS_LEVEL_MAX)).toBeLessThan(
+        fallIntervalForLines(lines, 1),
+      );
+    }
+  });
+
+  it('level=1 起始 1100、每行 -180、550 保底；高等级起始更快', () => {
+    expect(fallIntervalForLines(0)).toBe(1100);
+    expect(fallIntervalForLines(1, 1)).toBe(920);
+    expect(fallIntervalForLines(2, 1)).toBe(740);
+    expect(fallIntervalForLines(3, 1)).toBe(560);
+    expect(fallIntervalForLines(4, 1)).toBe(TETRIS_MIN_FALL_MS);
+    expect(fallIntervalForLines(0, 6)).toBe(1100 - 5 * 60);
+    expect(fallIntervalForLines(0, TETRIS_LEVEL_MAX)).toBe(440);
+  });
+});
+
+describe('难度等级：状态透传与重力推进', () => {
+  it('createTetrisState 默认 level = 1，可选参数透传且越界兜底', () => {
+    expect(createTetrisState(2026).level).toBe(1);
+    expect(createTetrisState(2026, {}).level).toBe(1);
+    expect(createTetrisState(2026, { level: 5 }).level).toBe(5);
+    expect(createTetrisState(2026, { level: 12 }).level).toBe(12);
+    // 越界 / 非法值一律落回 1..12
+    expect(createTetrisState(2026, { level: 0 }).level).toBe(TETRIS_LEVEL_MIN);
+    expect(createTetrisState(2026, { level: -7 }).level).toBe(TETRIS_LEVEL_MIN);
+    expect(createTetrisState(2026, { level: 99 }).level).toBe(TETRIS_LEVEL_MAX);
+    expect(createTetrisState(2026, { level: Number.NaN }).level).toBe(TETRIS_LEVEL_MIN);
+    expect(createTetrisState(2026, { level: 2.9 }).level).toBe(2);
+    expect(normalizeTetrisLevel(Number.POSITIVE_INFINITY)).toBe(TETRIS_LEVEL_MAX);
+    expect(normalizeTetrisLevel(Number.NEGATIVE_INFINITY)).toBe(TETRIS_LEVEL_MIN);
+  });
+
+  it('fallIntervalForLines 对 level 越界兜底与合法值一致', () => {
+    for (const lines of [0, 2, 4, 99]) {
+      expect(fallIntervalForLines(lines, 0)).toBe(fallIntervalForLines(lines, 1));
+      expect(fallIntervalForLines(lines, 99)).toBe(fallIntervalForLines(lines, 12));
+      expect(fallIntervalForLines(lines, Number.NaN)).toBe(fallIntervalForLines(lines, 1));
+      expect(fallIntervalForLines(lines, 3.8)).toBe(fallIntervalForLines(lines, 3));
+    }
+  });
+
+  it('advance 用 state.level 决定重力间隔（不是写死 Lv.1）', () => {
+    const level1 = withActive(createTetrisState(31), { kind: 'O', rotation: 0, x: 3, y: 0 });
+    const level12 = withActive(createTetrisState(31, { level: 12 }), {
+      kind: 'O',
+      rotation: 0,
+      x: 3,
+      y: 0,
+    });
+    const fastInterval = fallIntervalForLines(0, 12);
+    expect(fastInterval).toBe(440);
+
+    // Lv.12：够一个间隔就下落一格
+    expect(advance(level12, fastInterval - 1).state.active.y).toBe(0);
+    expect(advance(level12, fastInterval).state.active.y).toBe(1);
+    // 同样的 delta，Lv.1 还在等 1100ms，不动
+    expect(advance(level1, fastInterval).state.active.y).toBe(0);
+  });
+});
+
+describe('难度等级：Lv.12 autoplay 仍能完成一局', () => {
+  function runAiAtLevel(seed: number, level: number, maxPieces: number): TetrisState {
+    let state = createTetrisState(seed, { level });
+    for (let piece = 0; piece < maxPieces && !state.finished; piece += 1) {
+      const placement = planPlacement(state);
+      expect(placement).not.toBeNull();
+      if (!placement) break;
+      let applied = state;
+      let guard = 0;
+      while (applied.active.rotation !== placement.rotation && guard < 4) {
+        const rotated = tryRotate(applied, 1);
+        if (!rotated.moved) break;
+        applied = rotated.state;
+        guard += 1;
+      }
+      guard = 0;
+      while (applied.active.x !== placement.x && guard < TETRIS_COLS + 4) {
+        const direction = applied.active.x < placement.x ? 1 : -1;
+        const shifted = tryMove(applied, direction);
+        if (!shifted.moved) break;
+        applied = shifted.state;
+        guard += 1;
+      }
+      const dropped = hardDrop(applied);
+      expect(dropped.locked).toBe(true);
+      state = dropped.state;
+    }
+    return state;
+  }
+
+  it('最高等级 12 下 AI 仍能在 40 块内消满 3 行（不会卡死）', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const state = runAiAtLevel(seed, TETRIS_LEVEL_MAX, 40);
+      expect(state.level).toBe(TETRIS_LEVEL_MAX);
+      expect(state.finished).toBe(true);
+      expect(state.lines).toBeGreaterThanOrEqual(TETRIS_GOAL_LINES);
+      expect(state.score).toBe(
+        state.lines * TETRIS_SCORE_PER_LINE +
+          state.lockedPieces * TETRIS_SCORE_PER_PIECE,
+      );
+    }
+  });
+
+  it('最高等级下纯重力推进也不会「够间隔却不动」', () => {
+    const state = withActive(createTetrisState(77, { level: TETRIS_LEVEL_MAX }), {
+      kind: 'O',
+      rotation: 0,
+      x: 3,
+      y: 0,
+    });
+    const interval = fallIntervalForLines(0, TETRIS_LEVEL_MAX);
+    const moved = advance(state, interval * 5);
+    expect(moved.locked).toBe(false);
+    expect(moved.state.active.y).toBeGreaterThanOrEqual(5);
   });
 });

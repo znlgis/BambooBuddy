@@ -27,7 +27,7 @@ const version = (sitePkg as { version?: string }).version ?? '0.0.0';
 const weekCount = computed(() => weekCompletedCount(progress.save, platform.now()));
 
 /** 今天玩了几局隐藏小游戏（只读本机存档；家长想知道时间花在哪） */
-const todayArcade = computed(() => progress.todayRecord.arcade.length);
+const todayArcade = computed(() => progress.todayRecord.arcadePlays);
 
 /** 孩子这周练过的习惯（去重，按第一次出现的顺序排） */
 const habits = computed(() => {

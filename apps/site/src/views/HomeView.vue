@@ -207,7 +207,7 @@ onMounted(() => {
           </span>
         </span>
         <span class="block text-base text-ink">
-          {{ progress.arcadeUnlimited ? t('arcade.unlimitedHint') : t('arcade.doorHint') + ' · ' + t('arcade.oncePerDay') }}
+          {{ progress.arcadeUnlimited ? t('arcade.unlimitedHint') : t('arcade.doorHint') }}
         </span>
       </span>
       <span class="text-base text-bamboo" aria-hidden="true">▶</span>

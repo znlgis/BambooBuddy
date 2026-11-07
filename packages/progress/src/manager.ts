@@ -10,9 +10,11 @@ import type {
   TaskProgress,
 } from '@bamboo/game-kit';
 import type { TaskSummary } from '@bamboo/content';
+import { arcadeLevelFor } from '@bamboo/game-kit';
 import { CLOTHING_SLOTS, findItem, ownsItem } from './catalog';
 import type { CatalogItem } from './catalog';
 import {
+  ARCADE_DAILY_PLAYS,
   arcadeStatus as readArcadeStatus,
   arcadeUnlimited as isArcadeUnlimited,
   arcadeUnlocked as isArcadeUnlocked,
@@ -39,7 +41,7 @@ export interface CompletionOutcome {
   arcadeUnlocked: boolean;
 }
 
-export type ArcadePlayReason = 'unknown' | 'notUnlocked' | 'already';
+export type ArcadePlayReason = 'unknown' | 'notUnlocked' | 'limit';
 export interface ArcadePlayOutcome {
   ok: boolean;
   reason?: ArcadePlayReason;
@@ -48,6 +50,10 @@ export interface ArcadePlayOutcome {
   best: number;
   /** 玩完之后（或现有的）总局数 */
   plays: number;
+  /** 玩完之后（或现有的）难度等级（由总局数派生，跨天保留） */
+  level: number;
+  /** 玩完之后（或现有的）今天已经玩了几局 */
+  playsToday: number;
 }
 
 export interface ArcadeSecretOutcome {
@@ -230,7 +236,7 @@ export class ProgressManager {
     };
   }
 
-  /** 今天的小门状态（未解锁 / 已玩哪几款 / 是否无限畅玩），界面与 e2e 都从这里读 */
+  /** 今天的小门状态（未解锁 / 已玩几局 / 是否无限畅玩），界面与 e2e 都从这里读 */
   arcadeStatus(now = this.clock()): ArcadeStatus {
     return readArcadeStatus(this.data, now);
   }
@@ -254,8 +260,8 @@ export class ProgressManager {
   }
 
   /**
-   * 记录一局隐藏小游戏：只在「已解锁 + 今天没玩过」时成功。
-   * 调用时机是一局真正结束（arcade:complete），中途退出不消耗当天的机会。
+   * 记录一局隐藏小游戏：解锁之后，普通模式每天最多 ARCADE_DAILY_PLAYS 局（三款合计），
+   * 无限畅玩不设局数上限。调用时机是一局真正结束（arcade:complete），中途退出不消耗当天的机会。
    */
   async playArcade(
     gameId: ArcadeGameId,
@@ -263,23 +269,37 @@ export class ProgressManager {
     now = this.clock(),
   ): Promise<ArcadePlayOutcome> {
     if (!isArcadeGameId(gameId)) {
-      return { ok: false, reason: 'unknown', gameId, best: 0, plays: 0 };
+      return { ok: false, reason: 'unknown', gameId, best: 0, plays: 0, level: 1, playsToday: 0 };
     }
     const today = dayKey(now);
     const data = ensureDay(this.data, now);
     const day = data.days[today]!;
     const previous = data.arcade[gameId] ?? { best: 0, plays: 0, lastPlayedDay: null };
+    const current = {
+      gameId,
+      best: previous.best,
+      plays: previous.plays,
+      level: arcadeLevelFor(previous.plays),
+      playsToday: day.arcadePlays,
+    };
     if (!isArcadeUnlocked(day)) {
-      return { ok: false, reason: 'notUnlocked', gameId, best: previous.best, plays: previous.plays };
+      return { ok: false, reason: 'notUnlocked', ...current };
     }
-    // 隐藏彩蛋触发后当天无限畅玩：同一款可以反复玩，最高分与总局数照常累计
-    if (!isArcadeUnlimited(day) && day.arcade.includes(gameId)) {
-      return { ok: false, reason: 'already', gameId, best: previous.best, plays: previous.plays };
+    // 无限畅玩：不设局数上限；普通模式：三款合计最多 ARCADE_DAILY_PLAYS 局
+    if (!isArcadeUnlimited(day) && day.arcadePlays >= ARCADE_DAILY_PLAYS) {
+      return { ok: false, reason: 'limit', ...current };
     }
     const next = withArcadePlay(data, gameId, score, now);
     await this.commit(next);
     const record = next.arcade[gameId];
-    return { ok: true, gameId, best: record.best, plays: record.plays };
+    return {
+      ok: true,
+      gameId,
+      best: record.best,
+      plays: record.plays,
+      level: arcadeLevelFor(record.plays),
+      playsToday: next.days[today]!.arcadePlays,
+    };
   }
 
   /** 摸头 / 抱抱 / 击掌：每天各一次，不消耗任何资源 */

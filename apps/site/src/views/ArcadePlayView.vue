@@ -51,7 +51,9 @@ function handleEvent<K extends keyof ArcadeEventMap>(type: K, payload: ArcadeEve
   recorded.value = true;
   const result = payload as ArcadeEventMap['arcade:complete'];
   void progress.playArcade(props.gameId, result.score).then((outcome) => {
-    if (outcome !== null && !outcome.ok) showToast(t('arcade.playedToday'));
+    if (outcome !== null && !outcome.ok && outcome.reason === 'limit') {
+      showToast(t('arcade.limitReached', { n: progress.arcadeStatus.dailyLimit }));
+    }
   });
 }
 
@@ -99,11 +101,13 @@ async function start(): Promise<void> {
     const loaded = (await load()).default;
     if (disposed || !host.value) return;
     mod.value = loaded;
+    // 难度等级在开局这一刻读一次：这一局内不变，下一局会按新的累计局数重新算
     const context = createArcadeContext(
       loaded.manifest,
       host.value,
       { onEvent: handleEvent, onExit: handleExit },
       locale.current,
+      progress.arcadeLevel(props.gameId),
     );
     if (disposed || !host.value) return;
     await loaded.mount(context);

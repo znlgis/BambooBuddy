@@ -69,7 +69,8 @@ class TetrisScene extends ArcadeScene {
 
   create(): void {
     const seed = hashString(this.ctx.manifest.id + ':' + this.now());
-    this.state = createTetrisState(seed);
+    // 难度等级由外壳按累计局数传入（跨天保留）；level=1 与旧行为完全一致
+    this.state = createTetrisState(seed, { level: this.level });
 
     this.drawBackground();
     this.drawBoardFrame();
@@ -290,6 +291,9 @@ class TetrisScene extends ArcadeScene {
         4,
       );
     }
+
+    // 难度药丸夹在左侧目标 HUD（到 356）和右侧预览框（从 536 起）之间，不遮任何一侧
+    this.drawLevelPill(446, 194);
   }
 
   private drawControls(): void {

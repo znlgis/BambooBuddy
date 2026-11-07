@@ -8,7 +8,8 @@ import { useProgress } from '../stores/progress';
 
 /**
  * 竹林游戏厅：隐藏小游戏唯一的入口页。
- * 未解锁直接回小屋（不给孩子一个「锁着的页面」）；每天每款只开一次。
+ * 未解锁直接回小屋（不给孩子一个「锁着的页面」）。
+ * 普通模式每天最多 21 局（三款合计）；无限畅玩不设上限，难度随累计局数一路上涨。
  */
 const progress = useProgress();
 const { t } = useI18n();
@@ -17,7 +18,9 @@ const toast = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 const games = ARCADE_CATALOG;
-const remaining = computed(() => progress.arcadeStatus.remaining.length);
+const status = computed(() => progress.arcadeStatus);
+const remaining = computed(() => status.value.remainingPlays);
+const limitText = computed(() => t('arcade.limitReached', { n: status.value.dailyLimit }));
 
 function showToast(text: string): void {
   toast.value = text;
@@ -30,7 +33,7 @@ function showToast(text: string): void {
 
 function start(gameId: ArcadeGameId): void {
   if (!progress.arcadeAvailable(gameId)) {
-    showToast(t('arcade.playedToday') + ' · ' + t('arcade.againTomorrow'));
+    showToast(limitText.value);
     return;
   }
   navigate('/arcade/' + gameId);
@@ -61,8 +64,12 @@ onMounted(async () => {
       >
         ∞ {{ t('arcade.unlimited') }}
       </p>
-      <p v-else class="mt-1 text-base text-inksoft">
-        {{ t('arcade.oncePerDay') }} · {{ t('arcade.againTomorrow') }}
+      <p
+        v-else
+        data-testid="arcade-plays-left"
+        class="mt-1 rounded-full bg-bamboo-deep px-3 py-1 text-base font-bold text-white"
+      >
+        🎮 {{ t('arcade.playsLeft', { n: remaining }) }}
       </p>
     </header>
 
@@ -93,17 +100,16 @@ onMounted(async () => {
                 🏆 {{ t('arcade.best', { n: progress.arcadeBest(game.id) }) }}
               </span>
               <span
+                class="rounded-full bg-bamboo-deep px-2 py-0.5 font-bold text-white"
+                :data-testid="'arcade-level-' + game.id"
+              >
+                {{ t('arcade.levelShort', { n: progress.arcadeLevel(game.id) }) }}
+              </span>
+              <span
                 v-if="progress.arcadeUnlimited"
                 class="rounded-full bg-bamboo-deep px-2 py-0.5 font-bold text-white"
               >
                 ∞ {{ t('arcade.unlimited') }}
-              </span>
-              <span
-                v-else-if="!progress.arcadeAvailable(game.id)"
-                :data-testid="'arcade-played-' + game.id"
-                class="rounded-full bg-mint px-2 py-0.5 font-bold text-bamboo-deep"
-              >
-                ✅ {{ t('arcade.playedToday') }}
               </span>
             </span>
           </span>
@@ -118,9 +124,10 @@ onMounted(async () => {
 
     <p
       v-if="remaining === 0 && !progress.arcadeUnlimited"
+      data-testid="arcade-limit"
       class="mt-4 rounded-2xl bg-cream px-4 py-3 text-base text-ink"
     >
-      🌙 {{ t('arcade.againTomorrow') }}
+      🌙 {{ limitText }}
     </p>
 
     <button

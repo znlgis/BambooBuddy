@@ -127,6 +127,7 @@ export function emptyDay(date: string): DayRecord {
     seconds: 0,
     restDismissed: false,
     arcade: [],
+    arcadePlays: 0,
     arcadeSecret: false,
   };
 }
@@ -293,6 +294,8 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
       seconds: positiveInt(raw.seconds),
       restDismissed: raw.restDismissed === true,
       arcade: uniqueArcadeIds(raw.arcade),
+      // v3 及更老：没有 arcadePlays，按「今天玩过几款」兜底（旧规则每款每天一次，正好等于局数）
+      arcadePlays: positiveInt(raw.arcadePlays, uniqueArcadeIds(raw.arcade).length),
       arcadeSecret: raw.arcadeSecret === true,
     };
   }
@@ -308,6 +311,8 @@ const MIGRATIONS: Record<number, (raw: Raw, now: number) => Raw> = {
   1: (raw) => raw,
   // v2 → v3：只新增「今天触发过竹林小路」的布尔值；缺的字段照样由 sanitize 兜底
   2: (raw) => raw,
+  // v3 → v4：只新增「今天已经玩了几局」的计数；缺的字段由 sanitize 按旧规则兜底
+  3: (raw) => raw,
 };
 
 /** 读档体检：坏字段只丢那一个，不连累整份存档；来自未来版本的存档才整体清空 */

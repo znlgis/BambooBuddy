@@ -248,6 +248,54 @@ test('无限畅玩：普通模式已满 21 局，触发竹林小路后仍能完�
   await expect(page.getByTestId('arcade-view')).toBeVisible({ timeout: 20_000 });
 });
 
+test('无限畅玩：一局结束后自动接着下一局、不返回游戏厅，直到自己返回', async ({ page }) => {
+  await seedSave(page, {
+    completed: ['brush', 'wash', 'feed', 'dress'],
+    arcadePlays: 0,
+    arcadeSecret: true,
+  });
+  await page.goto('/#/arcade/popstar');
+  await expect(page.getByTestId('arcade-play-view')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('arcade-unlimited')).toHaveCount(0); // 游戏厅才有的徽章，玩家页不该出现
+
+  const playsToday = (): Promise<number> =>
+    page.evaluate((today) => {
+      const bridge = (window as unknown as { __bamboo?: { save?: BridgeSave } }).__bamboo;
+      return bridge?.save?.days?.[today]?.arcadePlays ?? 0;
+    }, TODAY);
+
+  /** 真实点击棋盘，直到今天完成 target 局（消灭星星一局收满 24 颗即结束） */
+  async function playUntil(target: number): Promise<void> {
+    for (let i = 0; i < 120; i += 1) {
+      const box = await page.getByTestId('arcade-host').boundingBox();
+      if (box === null) break;
+      const x = box.x + box.width * (0.2 + ((i * 37) % 7) / 10);
+      const y = box.y + box.height * (0.25 + ((i * 53) % 8) / 20);
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(160);
+      if ((await playsToday()) >= target) return;
+    }
+    throw new Error('消灭星星在限定点击内没有完成第 ' + target + ' 局');
+  }
+
+  await playUntil(1);
+  // 一局结束后不返回游戏厅，约 0.9 秒后自动续上下一局
+  await expect(page.getByTestId('arcade-play-view')).toBeVisible();
+  await page.waitForTimeout(1800);
+  await expect(page.getByTestId('arcade-play-view')).toBeVisible();
+  await expect(page.getByTestId('arcade-view')).toHaveCount(0);
+
+  await playUntil(2);
+  await expect(page.getByTestId('arcade-play-view')).toBeVisible();
+  await expect(page.getByTestId('arcade-view')).toHaveCount(0);
+
+  // 孩子自己按返回：这时才回游戏厅
+  await page.getByTestId('arcade-leave').click();
+  await page.getByTestId('arcade-leave-exit').click();
+  await expect(page.getByTestId('arcade-view')).toBeVisible({ timeout: 20_000 });
+  expect(await playsToday()).toBe(2);
+});
+
 test('难度：跨天累计 4 局显示 Lv.3，再玩两局升到 Lv.4', async ({ page }) => {
   // 跨天记录：消灭星星累计玩过 4 局 → 1 + floor(4 / 2) = Lv.3（今天的局数仍是 0）
   await seedSave(page, { completed: ['brush', 'wash', 'feed', 'dress'], plays: { popstar: 4 } });

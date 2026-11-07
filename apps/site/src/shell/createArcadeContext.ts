@@ -40,6 +40,8 @@ export function createArcadeContext(
   locale: Locale,
   /** 本局难度等级（1..12）：由该款累计完成局数派生，宿主每局重新读一次存档传入 */
   level: number,
+  /** 无限畅玩：一局结束后由外壳直接接着开下一局，不返回游戏厅 */
+  unlimited: boolean,
 ): ArcadeContext {
   return {
     container,
@@ -47,6 +49,7 @@ export function createArcadeContext(
     services: platform,
     locale,
     level,
+    unlimited,
     reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     debug: readDebugOptions(),
     emit(type, payload) {

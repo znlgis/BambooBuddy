@@ -23,7 +23,12 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const leaving = ref(false);
 const toast = ref<string | null>(null);
-const recorded = ref(false);
+/** 开局时读一次：无限畅玩（竹林小路）下每局结束后自动接着开下一局，不返回游戏厅 */
+let unlimitedMode = false;
+/** 正在准备下一局：防止两局事件叠在一起重复开 */
+let continuing = false;
+
+let continueTimer: ReturnType<typeof setTimeout> | null = null;
 
 const progress = useProgress();
 const settings = useSettings();
@@ -44,17 +49,67 @@ function showToast(text: string): void {
   }, 2200);
 }
 
-/** 一局真正结束才写存档：中途退出不消耗当天的机会 */
+/**
+ * 一局真正结束才写存档：中途退出不消耗当天的机会。
+ * 普通模式只结算一次（随后由结算卡回游戏厅）；无限畅玩时每完成一局都写档，
+ * 并且不返回游戏厅，直接接着开下一局。
+ */
 function handleEvent<K extends keyof ArcadeEventMap>(type: K, payload: ArcadeEventMap[K]): void {
   if (type !== 'arcade:complete') return;
-  if (recorded.value) return;
-  recorded.value = true;
   const result = payload as ArcadeEventMap['arcade:complete'];
   void progress.playArcade(props.gameId, result.score).then((outcome) => {
     if (outcome !== null && !outcome.ok && outcome.reason === 'limit') {
       showToast(t('arcade.limitReached', { n: progress.arcadeStatus.dailyLimit }));
     }
+    // 无限畅玩：一局结束后直接换上新一局（难度按刚写档后的累计局数重新算）。
+    // 即使这次写档失败也不把孩子卡在结束画面上：先接着能玩。
+    if (unlimitedMode && result.mode === 'continuous') scheduleNextRound();
   });
+}
+
+function scheduleNextRound(): void {
+  if (disposed || continuing) return;
+  continuing = true;
+  continueTimer = setTimeout(() => {
+    continueTimer = null;
+    void startNextRound();
+  }, 900);
+}
+
+/** 无限畅玩专用：销毁刚结束的这一局，立刻用同一款游戏开下一局（不经过游戏厅） */
+async function startNextRound(): Promise<void> {
+  if (disposed || !host.value) return;
+  try {
+    await mod.value?.unmount();
+  } catch {
+    // 旧一局销毁失败不阻塞新一局
+  }
+  mod.value = null;
+  if (disposed || !host.value) return;
+  try {
+    const load = arcadeRegistry[props.gameId];
+    if (load === undefined) return;
+    const loaded = (await load()).default;
+    if (disposed || !host.value) return;
+    mod.value = loaded;
+    const context = createArcadeContext(
+      loaded.manifest,
+      host.value,
+      { onEvent: handleEvent, onExit: handleExit },
+      locale.current,
+      progress.arcadeLevel(props.gameId),
+      unlimitedMode,
+    );
+    await loaded.mount(context);
+    recordDebugEvent('arcade:start', props.gameId);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    error.value = t('arcade.loadFailed');
+    recordDebugError(detail);
+    console.error('[bamboo] 小游戏续局失败：' + props.gameId, cause);
+  } finally {
+    continuing = false;
+  }
 }
 
 function handleExit(): void {
@@ -101,6 +156,7 @@ async function start(): Promise<void> {
     const loaded = (await load()).default;
     if (disposed || !host.value) return;
     mod.value = loaded;
+    unlimitedMode = progress.arcadeUnlimited;
     // 难度等级在开局这一刻读一次：这一局内不变，下一局会按新的累计局数重新算
     const context = createArcadeContext(
       loaded.manifest,
@@ -108,6 +164,7 @@ async function start(): Promise<void> {
       { onEvent: handleEvent, onExit: handleExit },
       locale.current,
       progress.arcadeLevel(props.gameId),
+      unlimitedMode,
     );
     if (disposed || !host.value) return;
     await loaded.mount(context);
@@ -139,8 +196,11 @@ onMounted(() => {
 
 onBeforeUnmount(async () => {
   disposed = true;
+  continuing = false;
   if (playTimer !== null) clearInterval(playTimer);
   if (toastTimer !== null) clearTimeout(toastTimer);
+  if (continueTimer !== null) clearTimeout(continueTimer);
+  continueTimer = null;
   playTimer = null;
   toastTimer = null;
   releaseLifecycle();

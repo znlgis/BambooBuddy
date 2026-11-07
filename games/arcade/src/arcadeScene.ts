@@ -216,17 +216,32 @@ export abstract class ArcadeScene extends Phaser.Scene {
   /**
    * 一局的唯一收尾：发 arcade:complete（外壳写存档）、撒花、显示成绩与唯一出口。
    * 三款游戏都调它 —— 不会有人忘了发事件或忘了写分。
+   *
+   * 无限畅玩（且不是自动通关）时改为 continuous：不弹「明天再来」的结算卡、
+   * 不自动离开，外壳收到事件后直接接着开下一局，直到孩子自己按返回。
    */
   protected finish(score: number): void {
     if (this.finished) return;
     this.finished = true;
     const safeScore = Math.max(0, Math.floor(score));
+    const continuous = this.ctx.unlimited && !this.autoplay;
     this.ctx.emit('arcade:complete', {
       gameId: this.ctx.manifest.id,
       score: safeScore,
       durationMs: this.now() - this.startedAt,
+      mode: continuous ? 'continuous' : 'once',
     });
     this.sfx('complete');
+    if (continuous) {
+      // 一局完成的小提示即可；外壳会在约 0.9 秒后换上新一局
+      this.showBanner(this.t('arcade.roundDone'), {
+        y: 320,
+        holdMs: 700,
+        color: THEME.bamboo,
+        textColor: CSS.paper,
+      });
+      return;
+    }
     this.say('arcade.doneVoice');
     this.time.delayedCall(this.instant ? 0 : 420, () => this.showCelebration(safeScore));
   }

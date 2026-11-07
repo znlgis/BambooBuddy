@@ -28,11 +28,19 @@ export interface ArcadeManifest {
   ageRange: [number, number];
 }
 
+/** 一局结束后的去向：once = 结算回游戏厅；continuous = 无限畅玩，外壳直接接着开下一局 */
+export type ArcadeRoundMode = 'once' | 'continuous';
+
 export interface ArcadeEventMap {
   'arcade:start': { gameId: ArcadeGameId; at: number };
   'arcade:round': { gameId: ArcadeGameId; round: number; totalRounds: number };
-  /** 一局真正结束：外壳据此写存档（最高分 + 今天玩过） */
-  'arcade:complete': { gameId: ArcadeGameId; score: number; durationMs: number };
+  /** 一局真正结束：外壳据此写存档（最高分 + 今天玩过）；mode 告诉外壳要不要接着开下一局 */
+  'arcade:complete': {
+    gameId: ArcadeGameId;
+    score: number;
+    durationMs: number;
+    mode: ArcadeRoundMode;
+  };
   'arcade:exit': { reason: 'complete' | 'quit' };
 }
 
@@ -45,6 +53,11 @@ export interface ArcadeContext {
   reducedMotion: boolean;
   /** 本局难度等级（1..ARCADE_LEVEL_MAX）：外壳按该游戏累计局数传入，游戏逻辑据此调参 */
   level: number;
+  /**
+   * 无限畅玩（竹林小路）：一局结束后不弹「明天再来」、不返回游戏厅，
+   * 由外壳直接接着开下一局，直到孩子自己按返回/关闭。
+   */
+  unlimited: boolean;
   /** ?autoplay=1 自动通关 / ?instant=1 跳过过场（与日常玩法同一套开关） */
   debug?: DebugOptions;
   emit<K extends keyof ArcadeEventMap>(type: K, payload: ArcadeEventMap[K]): void;

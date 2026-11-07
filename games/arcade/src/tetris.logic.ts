@@ -9,13 +9,13 @@ import { hashString, seededRandom, shuffled } from './rng';
 
 export const TETRIS_COLS = 8;
 export const TETRIS_ROWS = 14;
-/** 一局消掉 3 行就完成（彩虹救援也计入进度） */
-export const TETRIS_GOAL_LINES = 3;
+/** 一局只打一轮：消掉 1 行就完成一局（彩虹救援也计入这 1 行） */
+export const TETRIS_GOAL_LINES = 1;
 /** 堆到顶时最下面 4 行变彩虹消掉 */
 export const TETRIS_RESCUE_ROWS = 4;
 export const TETRIS_START_FALL_MS = 1100;
 export const TETRIS_MIN_FALL_MS = 550;
-/** 每消一行加快一点，3 行时正好 560ms（不会出现“眨眼就没了”） */
+/** 每消一行加快一点（一局通常只消 1 行就结束；多行档位留给公式与单测，等级缩放不受影响） */
 export const TETRIS_FALL_STEP_MS = 180;
 /** 难度等级范围：1 最简单、12 封顶（外壳按该游戏累计局数算好传进来，跨天保留） */
 export const TETRIS_LEVEL_MIN = 1;
@@ -27,7 +27,7 @@ export const TETRIS_LEVEL_FLOOR_STEP_MS = 20;
 /** 全等级绝对保底：再快也不低于 300ms/格，4–8 岁也来得及看清 */
 export const TETRIS_FALL_FLOOR_MS = 300;
 export const TETRIS_SCORE_PER_LINE = 10;
-/** 每锁定一块 +1：即使一局总是 3 行，成绩也会随落子数变化 */
+/** 每锁定一块 +1：即使一局只要消 1 行，成绩也会随落子数变化 */
 export const TETRIS_SCORE_PER_PIECE = 1;
 
 export const PIECE_KINDS = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'] as const;
@@ -325,7 +325,7 @@ function rescueBottomRows(board: Board): Board {
 
 /**
  * 落子（真实按钮 / autoplay AI 共用的唯一收尾）：
- * 写盘 → 消行 → 计分 → 抽下一块 → 出生点被占就彩虹救援 → 到 3 行结束。
+ * 写盘 → 消行 → 计分 → 抽下一块 → 出生点被占就彩虹救援 → 到 1 行结束这一局。
  */
 export function lockPiece(state: TetrisState): TetrisLockResult {
   if (state.finished) return noLock(state);

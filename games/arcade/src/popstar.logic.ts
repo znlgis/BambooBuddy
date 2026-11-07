@@ -1,9 +1,12 @@
 /**
- * 消灭星星的纯逻辑：棋盘 / 连通组 / 消除与补星 / 三轮目标 / 无解兜底。
+ * 消灭星星的纯逻辑：棋盘 / 连通组 / 消除与补星 / 单轮目标 / 无解兜底。
  *
  * 这一层不碰 Phaser、不读时钟、不取随机数：
  * - 棋盘与补星都由 seed 决定（同种子同结果，可复现、可单测）；
  * - 场景只把「种子」和「玩家点了哪一组」传进来，再把结果画出来。
+ *
+ * 一局只打一轮：收满本局目标（老第 1 轮的 24 + 每级 2）就结束，场景直接结算回游戏厅；
+ * 没有第 2、3 轮，也没有 advanceRound —— 孩子一局接一局地玩。
  */
 import { hashString, seededRandom } from './rng';
 
@@ -13,13 +16,12 @@ export const POPSTAR_CELLS = POPSTAR_COLS * POPSTAR_ROWS;
 export const POPSTAR_FAMILY_COUNT = 4;
 /** 至少 2 颗连在一起才消；单颗点了什么也不会发生（不是失败） */
 export const POPSTAR_MIN_GROUP = 2;
-export const POPSTAR_ROUNDS = 3;
-/** 三轮各要收集的星星数（level=1 时）；一局最多 96 颗 */
-export const POPSTAR_GOALS = [24, 32, 40] as const;
+/** 一局只打一轮：level=1 的目标就是旧版第 1 轮的 24 颗；一轮最多能收集 96 颗 */
+export const POPSTAR_BASE_GOAL = 24;
 /** 难度等级范围：1 起、12 封顶（外壳按累计局数算出的等级也会先夹到这个区间） */
 export const POPSTAR_MIN_LEVEL = 1;
 export const POPSTAR_MAX_LEVEL = 12;
-/** 每升一级，每轮目标多要这么多颗 */
+/** 每升一级，本局目标多要这么多颗 */
 export const POPSTAR_GOAL_PER_LEVEL = 2;
 /** 单轮目标上限：一局最多收集 96 颗，留足余量，绝不要求超过整局可收集量 */
 export const POPSTAR_MAX_GOAL = 80;
@@ -33,18 +35,16 @@ export type StarFamily = 0 | 1 | 2 | 3;
 export type PopstarCell = StarFamily | null;
 /** 行优先的一维棋盘，下标 = row * COLS + col；null = 空格 */
 export type PopstarBoard = readonly PopstarCell[];
-export type PopstarStatus = 'playing' | 'roundDone' | 'done';
+export type PopstarStatus = 'playing' | 'roundDone';
 
 export interface PopstarState {
   readonly seed: number;
-  /** 难度等级 1..12：越高每轮目标越大；一局仍是 3 轮，跨天由外壳保留 */
+  /** 难度等级 1..12：越高级本局目标越大；一局只有一轮，等级跨天由外壳保留 */
   readonly level: number;
-  /** 0-based 轮次 */
-  readonly round: number;
   readonly board: PopstarBoard;
-  /** 本轮已收集 */
+  /** 本局已收集 */
   readonly collected: number;
-  /** 整局累计（就是场景最后 finish 的分数） */
+  /** 本局分数（就是场景最后 finish 的分数） */
   readonly score: number;
   readonly status: PopstarStatus;
   /** 成功消过几次：给补星种子加盐，让每次补出来的序列不同 */
@@ -57,7 +57,6 @@ export interface PopstarState {
 export interface PopstarStateOptions {
   readonly level?: number;
   readonly board?: PopstarBoard;
-  readonly round?: number;
   readonly collected?: number;
   readonly score?: number;
   readonly status?: PopstarStatus;
@@ -71,7 +70,7 @@ export interface PopResult {
   /** 因为棋盘无解而自动飞回天上的星星数 */
   readonly autoCollected: number;
   readonly state: PopstarState;
-  /** 本轮是否完成（场景据此放「完成啦」并进入下一轮） */
+  /** 本局目标是否完成（场景据此直接结算回游戏厅，一局只有这一轮） */
   readonly roundDone: boolean;
 }
 
@@ -246,25 +245,22 @@ export function clampLevel(level: number | undefined): number {
 }
 
 /**
- * 第 round 轮的目标（round 按 0..2 夹紧）。
- * level=1 就是老的三轮 24 / 32 / 40；每升一级每轮 +2，再封顶 POPSTAR_MAX_GOAL。
- * 12 级最难时三轮是 46 / 54 / 62，仍然远低于一局能收集的 96 颗（绝不会凑不够）。
+ * 本局目标：一局只打一轮，level=1 就是老第 1 轮的 24 颗；每升一级 +2，封顶 POPSTAR_MAX_GOAL。
+ * 12 级最难时是 46 颗，仍然远低于一轮能收集的 96 颗（绝不会凑不够）。
  */
-export function goalForRound(round: number, level = 1): number {
-  const index = clampInt(round, 0, POPSTAR_ROUNDS - 1);
-  const base = POPSTAR_GOALS[index] ?? POPSTAR_GOALS[0];
+export function goalForLevel(level = 1): number {
   const raise = (clampLevel(level) - 1) * POPSTAR_GOAL_PER_LEVEL;
-  return Math.min(POPSTAR_MAX_GOAL, base + raise);
+  return Math.min(POPSTAR_MAX_GOAL, POPSTAR_BASE_GOAL + raise);
 }
 
-/** 本轮还差多少颗：永远用 state.level，不能退回 level=1 的旧目标 */
+/** 本局还差多少颗：永远用 state.level，不能退回 level=1 的旧目标 */
 export function remainingToGoal(state: PopstarState): number {
-  return Math.max(0, goalForRound(state.round, state.level) - state.collected);
+  return Math.max(0, goalForLevel(state.level) - state.collected);
 }
 
 /** 0–1，竹筐里的填充比例 */
 export function roundProgress(state: PopstarState): number {
-  const goal = goalForRound(state.round, state.level);
+  const goal = goalForLevel(state.level);
   return clampInt(state.collected, 0, goal) / goal;
 }
 
@@ -281,7 +277,8 @@ function settleNoMove(state: PopstarState): { state: PopstarState; autoCollected
   }
   const remaining = filledCount(state.board);
   if (remaining === 0) {
-    const board = dealBoard(state.seed, `round:${state.round}:empty:${state.pops}`);
+    // 盐里保留 round:0：与旧版第 1 轮用同一副补星序列（level=1 行为不变）
+    const board = dealBoard(state.seed, `round:0:empty:${state.pops}`);
     return { state: { ...state, board }, autoCollected: 0 };
   }
   const collected = state.collected + remaining;
@@ -290,23 +287,23 @@ function settleNoMove(state: PopstarState): { state: PopstarState; autoCollected
     collected,
     score: state.score + remaining,
     autoCollectedTotal: state.autoCollectedTotal + remaining,
-    status: collected >= goalForRound(state.round, state.level) ? 'roundDone' : 'playing',
+    status: collected >= goalForLevel(state.level) ? 'roundDone' : 'playing',
   };
   if (next.status === 'roundDone') {
     return { state: { ...next, board: createEmptyBoard() }, autoCollected: remaining };
   }
-  const board = dealBoard(state.seed, `round:${state.round}:auto:${state.pops}`);
+  const board = dealBoard(state.seed, `round:0:auto:${state.pops}`);
   return { state: { ...next, board }, autoCollected: remaining };
 }
 
 export function createPopstarState(seed: number, options: PopstarStateOptions = {}): PopstarState {
-  const round = clampInt(options.round ?? 0, 0, POPSTAR_ROUNDS - 1);
-  const board = options.board === undefined ? dealBoard(seed, `round:${round}`) : assertBoard(options.board);
+  // 盐里保留 round:0：与旧版第 1 轮发同一副棋盘（level=1 行为不变）
+  const board =
+    options.board === undefined ? dealBoard(seed, 'round:0') : assertBoard(options.board);
   const collected = Math.max(0, Math.floor(options.collected ?? 0));
   return {
     seed: seed >>> 0,
     level: clampLevel(options.level),
-    round,
     board,
     collected,
     score: Math.max(collected, Math.floor(options.score ?? collected)),
@@ -337,14 +334,15 @@ export function tryPop(state: PopstarState, group: readonly number[]): PopResult
 
   const removed = new Set(valid);
   const popped = valid.length;
-  const random = seededRandom(hashString(`${state.seed}:refill:${state.round}:${state.pops + 1}`));
+  // 盐里的 0 对应旧版第 1 轮：补星序列与旧版完全一致
+  const random = seededRandom(hashString(`${state.seed}:refill:0:${state.pops + 1}`));
   const collected = state.collected + popped;
   let next: PopstarState = {
     ...state,
     board: collapseAndRefill(state.board, removed, random),
     collected,
     score: state.score + popped,
-    status: collected >= goalForRound(state.round, state.level) ? 'roundDone' : 'playing',
+    status: collected >= goalForLevel(state.level) ? 'roundDone' : 'playing',
     pops: state.pops + 1,
   };
 
@@ -355,21 +353,4 @@ export function tryPop(state: PopstarState, group: readonly number[]): PopResult
     autoCollected = settled.autoCollected;
   }
   return { popped, autoCollected, state: next, roundDone: next.status === 'roundDone' };
-}
-
-/** 本轮完成后进入下一轮；第三轮完成 → done（场景随后 finish(score)） */
-export function advanceRound(state: PopstarState): PopstarState {
-  if (state.status !== 'roundDone') return state;
-  const nextRound = state.round + 1;
-  if (nextRound >= POPSTAR_ROUNDS) {
-    return { ...state, status: 'done', board: createEmptyBoard() };
-  }
-  return {
-    ...state,
-    round: nextRound,
-    board: dealBoard(state.seed, `round:${nextRound}`),
-    collected: 0,
-    pops: 0,
-    status: 'playing',
-  };
 }

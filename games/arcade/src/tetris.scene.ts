@@ -48,7 +48,8 @@ const PIECE_COLORS: Record<PieceKind, number> = {
 const RAINBOW = [THEME.warmRed, THEME.gold, THEME.bamboo, THEME.water, THEME.lavender, THEME.pink];
 
 /**
- * 俄罗斯方块：拼满一行就消掉，累计 3 行完成。
+ * 俄罗斯方块：拼满一行就消掉，消掉 1 行即完成这一局（一局只打一轮，
+ * 完成后由基类 finish 结算并回游戏厅，孩子可以一局一局接着玩）。
  *
  * 场景只做三件事：把状态画出来、把按钮 / 滑动原样交给纯逻辑、把结果演出来。
  * ?autoplay=1 时 AI 也只是调用同一组 handleRotate / handleMove / handleHardDrop，
@@ -84,7 +85,7 @@ class TetrisScene extends ArcadeScene {
     this.renderAll();
 
     this.lastTick = this.now();
-    this.announceRound(1, TETRIS_GOAL_LINES);
+    // 一局只有一轮：不再播「第 1/3 轮」，HUD 直接显示「再消掉 1 行」
     if (!this.autoplay && !this.instant) this.say('arcade.tetris.intro');
     if (this.autoplay) this.time.delayedCall(240, () => this.autoStep());
   }
@@ -186,16 +187,9 @@ class TetrisScene extends ArcadeScene {
     if (result.rescues > 0) this.playRescue();
     if (result.clearedRows.length > 0) this.flashRows(result.clearedRows);
 
+    // 一局只打一轮：消掉 1 行（或彩虹救援计入 1 行）就是这一局的终点，直接结算
     const progressed = result.cleared > 0 || result.rescues > 0;
-    if (progressed) {
-      this.sfx(result.cleared > 0 ? 'correct' : 'sparkle');
-      if (result.cleared >= 2) this.say('arcade.nice');
-      this.showBanner(this.t('arcade.roundDone'), { y: 320, holdMs: 800 });
-      if (!this.state.finished) {
-        const next = Math.min(TETRIS_GOAL_LINES, this.state.lines + 1);
-        this.announceRound(next, TETRIS_GOAL_LINES);
-      }
-    }
+    if (progressed) this.sfx(result.cleared > 0 ? 'correct' : 'sparkle');
 
     if (result.finished) this.completeGame();
   }

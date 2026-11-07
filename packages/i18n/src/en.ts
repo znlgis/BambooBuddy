@@ -233,8 +233,6 @@ export const enUS: Record<MessageKey, string> = {
   'arcade.reveal.body': 'You finished all four little things today. There is a little door behind the bamboo — push it open.',
   'arcade.reveal.go': 'Open the door',
   'arcade.reveal.later': 'Later',
-  'arcade.round': 'Round {n}',
-  'arcade.roundOf': 'Round {n} / {total}',
   'arcade.start': 'Start',
   'arcade.tapStart': 'Tap to start',
   'arcade.next': 'Next',

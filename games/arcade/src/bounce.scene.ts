@@ -15,7 +15,6 @@ import {
 import { ArcadeScene } from './arcadeScene';
 import {
   BOUNCE_BOARD,
-  BOUNCE_ROUNDS,
   BOUNCE_STARS_PER_BLOCK,
   DEFAULT_AIM,
   advanceBounce,
@@ -62,7 +61,6 @@ class BounceScene extends ArcadeScene {
   private ballsG!: Phaser.GameObjects.Graphics;
   private launcherG!: Phaser.GameObjects.Graphics;
   private hudG!: Phaser.GameObjects.Graphics;
-  private roundText!: Phaser.GameObjects.Text;
   private goalText!: Phaser.GameObjects.Text;
   private starsText!: Phaser.GameObjects.Text;
 
@@ -72,7 +70,8 @@ class BounceScene extends ArcadeScene {
 
   create(): void {
     // 种子 = 游戏 id + 打开这一局的墙钟；同一次打开可复现，换一局布局会变。
-    // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留），只影响每轮的方块数
+    // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留），只影响这一局的方块数。
+    // 一局只打一轮：清完方块或贴底开花就结算回游戏厅，孩子一局接一局玩
     this.state = createBounceGame(hashString(this.ctx.manifest.id + ':' + this.now()), {
       level: this.level,
     });
@@ -82,14 +81,6 @@ class BounceScene extends ArcadeScene {
     this.drawHeader(this.t('arcade.bounce.name'));
     // 难度药丸放左上空白处：中间是"还差几个方块"、右边是星星 HUD，默认位置会叠上去
     this.drawLevelPill(120, 226);
-    this.roundText = this.addText(
-      this.W / 2,
-      108,
-      this.t('arcade.roundOf', { n: 1, total: BOUNCE_ROUNDS.length }),
-      26,
-      '#d9e8c8',
-      true,
-    ).setDepth(21);
     this.goalText = this.addText(this.W / 2, 226, '', 28, CSS.ink, true).setDepth(23);
     this.starsText = this.addText(0, 226, '', 30, CSS.ink, true).setDepth(23).setOrigin(0, 0.5);
 
@@ -100,7 +91,6 @@ class BounceScene extends ArcadeScene {
     this.ballsG = this.add.graphics().setDepth(16);
 
     this.drawAll();
-    this.announceRound(1, BOUNCE_ROUNDS.length);
 
     if (!this.autoplay && !this.instant) {
       this.say('arcade.bounce.intro');
@@ -135,7 +125,7 @@ class BounceScene extends ArcadeScene {
 
   /** 按下（或 autoplay 决定目标）→ 更新瞄准；这是真实手势与自动通关的唯一入口 */
   private beginAim(point: Vec2): void {
-    if (this.state.finished || this.state.roundDone) return;
+    if (this.state.finished) return;
     this.dragging = true;
     this.aim = aimToward(point);
     this.hideHintHand();
@@ -145,7 +135,7 @@ class BounceScene extends ArcadeScene {
   private releaseShot(): void {
     if (!this.dragging) return;
     this.dragging = false;
-    if (this.state.finished || this.state.roundDone) return;
+    if (this.state.finished) return;
     if (!canFire(this.state)) return;
 
     const shot = fireBall(this.state, this.aim);
@@ -206,8 +196,7 @@ class BounceScene extends ArcadeScene {
       this.sfx('sparkle');
       for (const block of events.flowered) this.onBlockFlowered(block);
     }
-    if (events.roundCompleted !== null) this.onRoundCompleted();
-    if (events.roundStarted !== null) this.onRoundStarted(events.roundStarted);
+    // 一局只打一轮：打完就直接结算（arcade:complete 由 finish 发）
     if (events.finished) this.completeGame();
   }
 
@@ -260,20 +249,6 @@ class BounceScene extends ArcadeScene {
         ease: 'Quad.easeIn',
         onComplete: () => star.destroy(),
       });
-    }
-  }
-
-  private onRoundCompleted(): void {
-    this.dragging = false;
-    this.sfx('correct');
-    this.showBanner(this.t('arcade.roundDone'), { y: 300, holdMs: 1200 });
-  }
-
-  private onRoundStarted(round: number): void {
-    this.announceRound(round, BOUNCE_ROUNDS.length);
-    if (!this.reducedMotion) {
-      this.blocksG.setAlpha(0);
-      this.tweens.add({ targets: this.blocksG, alpha: 1, duration: 220 });
     }
   }
 
@@ -440,7 +415,7 @@ class BounceScene extends ArcadeScene {
   private drawAim(): void {
     const g = this.aimG;
     g.clear();
-    if (!this.dragging || this.state.roundDone || this.state.finished) return;
+    if (!this.dragging || this.state.finished) return;
 
     const prediction = predictAim(this.state, this.aim);
     for (let index = 0; index < prediction.points.length - 1; index += 1) {
@@ -490,12 +465,10 @@ class BounceScene extends ArcadeScene {
   }
 
   private drawHud(): void {
-    const total = BOUNCE_ROUNDS.length;
     const remaining = remainingBlocks(this.state);
-    this.roundText.setText(this.t('arcade.roundOf', { n: this.state.round, total }));
     this.starsText.setText(String(scoreOf(this.state)));
     this.goalText.setText(
-      this.state.roundDone || this.finishSent
+      this.finishSent
         ? this.t('arcade.roundDone')
         : this.t('arcade.goalBlocks', { n: remaining }),
     );

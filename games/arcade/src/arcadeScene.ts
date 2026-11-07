@@ -213,12 +213,6 @@ export abstract class ArcadeScene extends Phaser.Scene {
     });
   }
 
-  /** 新一轮开始：发事件（e2e 可观测）+ 顶部一条轮次提示 */
-  protected announceRound(round: number, totalRounds: number): void {
-    this.ctx.emit('arcade:round', { gameId: this.ctx.manifest.id, round, totalRounds });
-    this.showBanner(this.t('arcade.roundOf', { n: round, total: totalRounds }), { holdMs: 900, y: 330 });
-  }
-
   /**
    * 一局的唯一收尾：发 arcade:complete（外壳写存档）、撒花、显示成绩与唯一出口。
    * 三款游戏都调它 —— 不会有人忘了发事件或忘了写分。

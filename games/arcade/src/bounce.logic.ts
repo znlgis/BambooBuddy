@@ -5,8 +5,10 @@
  * 随机来自种子，时间由调用方按毫秒推进，所有函数都返回新状态。
  * 场景只做三件事：把指针喂给 aimToward / fireBall、每帧 advanceBounce、把结果画出来。
  *
+ * 一局只打一轮（旧版「一局 3 轮」已取消）：清完方块或贴底开花就结算，孩子一局接一局玩。
+ *
  * 儿童向约束：
- * - 没有失败：方块贴到底部时"开出小花"飞走并计入收集，本轮直接完成；
+ * - 没有失败：方块贴到底部时"开出小花"飞走并计入收集，这一局直接完成；
  * - 没有数字血量：任何方块 1 击碎；
  * - 同时最多 3 颗球，反弹 8 次或飞出边界后回发射器，装弹 0.9 秒；
  * - 每发射 6 次方块整体下沉一格（越玩越紧，但不惩罚）。
@@ -47,8 +49,6 @@ export const BOUNCE_GRID = {
 
 /** 固定步长（毫秒）：测试与 autoplay 都按它推进，慢手机和 CI 结果一致 */
 export const BOUNCE_STEP_MS = 8;
-/** 一轮结束后停留多久再开下一轮（画面上的"完成啦"反馈） */
-export const BOUNCE_ROUND_PAUSE_MS = 1400;
 /** 瞄准离竖直向上的最大角度：球永远往上打 */
 export const BOUNCE_AIM_LIMIT_DEG = 75;
 export const BOUNCE_STARS_PER_BLOCK = 3;
@@ -61,12 +61,11 @@ export interface BounceRoundConfig {
   readonly bouncy: number;
 }
 
-/** 一局 3 轮：6 / 9 / 12 个方块，每轮混 2 个弹弹方块（这是 level=1 的基线） */
-export const BOUNCE_ROUNDS: readonly BounceRoundConfig[] = [
-  { blocks: 6, bouncy: 2 },
-  { blocks: 9, bouncy: 2 },
-  { blocks: 12, bouncy: 2 },
-];
+/**
+ * 旧版「一局 3 轮」的第 1 轮参数，现在就是一局本身：
+ * 一局只打一轮，level=1 必须与旧版第 1 轮完全一致（6 块、2 个弹弹方块）。
+ */
+export const BOUNCE_BASE_ROUND: BounceRoundConfig = { blocks: 6, bouncy: 2 };
 
 /** 难度等级范围：与外壳 arcadeLevelFor 的 1..12 对齐；越界一律夹回区间内 */
 export const BOUNCE_LEVEL_MIN = 1;
@@ -80,9 +79,10 @@ export const BOUNCE_LEVEL_MAX = 12;
 export const BOUNCE_MAX_ROWS = 5;
 
 /**
- * 每轮方块硬上限：容量 20 里只取 18，最底一行留 3 块（4/4/4/3/3）。
- * 满 20 时最底一行 4 块会把下半个棋盘整排封死，所在行与行之间的 25px 缝隙
+ * 每局方块硬上限：容量 20 里只取 18，最底一行留 3 块（4/4/4/3/3）。
+ * 满 20 时最底一行 4 块会把下半个棋盘整排封死，行与行之间的 25px 缝隙
  * 又小于球直径 32px，球只能硬撞；留个缺口，球还能从旁边绕上去，连撞更顺。
+ * Lv.12 也只有 6 + 11 = 17 块，18 是保险丝，正常永远不会碰到。
  */
 export const BOUNCE_MAX_BLOCKS = 18;
 
@@ -93,18 +93,20 @@ export function normalizeBounceLevel(level: number): number {
 }
 
 /**
- * 难度等级 → 三轮配置。
- * level=1 原样返回 BOUNCE_ROUNDS（6 / 9 / 12 块，与旧版完全一致）；
- * 之后每升一级，每轮各 +1 块，按 BOUNCE_MAX_BLOCKS 封顶：越多越难，但永远摆得进棋盘。
- * 弹弹方块数量保持不变——它只加球速不加压力，不动它就不用担心高等级失控。
+ * 难度等级 → 本局方块数：旧版第 1 轮 6 块 + 每升一级 1 块，按棋盘容量封顶。
+ * level=1 → 6（与旧版第 1 轮一致）；level=12 → 17。
  */
-export function bounceRoundsForLevel(level: number): readonly BounceRoundConfig[] {
+export function bounceBlocksForLevel(level: number): number {
   const extra = normalizeBounceLevel(level) - BOUNCE_LEVEL_MIN;
-  if (extra === 0) return BOUNCE_ROUNDS;
-  return BOUNCE_ROUNDS.map((config) => ({
-    blocks: Math.min(BOUNCE_MAX_BLOCKS, config.blocks + extra),
-    bouncy: config.bouncy,
-  }));
+  return Math.min(BOUNCE_MAX_BLOCKS, BOUNCE_BASE_ROUND.blocks + extra);
+}
+
+/**
+ * 难度等级 → 本局这一轮的唯一一份配置。
+ * 弹弹方块数量保持不变（仍是 2）：它只加球速不加压力，level=1 才能与旧版逐帧一致。
+ */
+export function bounceConfigForLevel(level: number): BounceRoundConfig {
+  return { blocks: bounceBlocksForLevel(level), bouncy: BOUNCE_BASE_ROUND.bouncy };
 }
 
 export interface Vec2 {
@@ -153,36 +155,31 @@ export interface BounceState {
   readonly seed: number;
   /** 本局难度等级（1..BOUNCE_LEVEL_MAX）：外壳按该款累计完成局数传入，跨天保留 */
   readonly level: number;
-  /** 1..BOUNCE_ROUNDS.length */
-  readonly round: number;
   readonly blocks: readonly BounceBlock[];
   readonly balls: readonly BounceBall[];
   /** 已收集的星星（每块 3 颗，开花也算） */
   readonly stars: number;
   /** 连击奖励累计：同一发击碎第 2、3… 块时每块 +5 */
   readonly comboBonus: number;
-  readonly shotsThisRound: number;
-  readonly shotsTotal: number;
+  /** 本局已经发射了几发（第 6 / 12… 发触发整体下沉） */
+  readonly shots: number;
   readonly drops: number;
   /** 装弹剩余（毫秒）；0 表示可以再发射 */
   readonly reloadLeftMs: number;
-  /** 本轮结束后的停留倒计时 */
-  readonly roundPauseLeftMs: number;
   /** 物理累加器：不足一步的毫秒留到下一帧，保证定步长 */
   readonly accumMs: number;
   readonly nextBallId: number;
-  readonly roundDone: boolean;
+  /** 一局只打一轮：清完方块或贴底开花就 finished，场景据此结算 */
   readonly finished: boolean;
 }
 
 export interface BounceEvents {
-  /** 被打碎的方块（本轮内） */
+  /** 被打碎的方块（本局内） */
   readonly broken: readonly BounceBlock[];
   /** 贴底开花飞走的方块（也算收集） */
   readonly flowered: readonly BounceBlock[];
   readonly reloaded: boolean;
-  readonly roundCompleted: number | null;
-  readonly roundStarted: number | null;
+  /** 这一帧/这一发把本局打完了：场景据此 finish(score) 结算 */
   readonly finished: boolean;
 }
 
@@ -219,26 +216,17 @@ export interface BounceAutoplayOptions {
   readonly level?: number;
 }
 
-export interface BounceRoundSnapshot {
-  readonly round: number;
-  readonly blocks: number;
-  readonly bouncy: number;
-}
-
 export interface BounceAutoplayResult {
   readonly state: BounceState;
   readonly steps: number;
   readonly finished: boolean;
   readonly score: number;
-  readonly rounds: readonly BounceRoundSnapshot[];
 }
 
 interface MutableEvents {
   broken: BounceBlock[];
   flowered: BounceBlock[];
   reloaded: boolean;
-  roundCompleted: number | null;
-  roundStarted: number | null;
   finished: boolean;
 }
 
@@ -250,8 +238,6 @@ function emptyEvents(): MutableEvents {
     broken: [],
     flowered: [],
     reloaded: false,
-    roundCompleted: null,
-    roundStarted: null,
     finished: false,
   };
 }
@@ -300,7 +286,6 @@ export function aimToward(point: Vec2): BounceAim {
 /** 这一帧能不能再发一颗球（自动通关也走这个判定） */
 export function canFire(state: BounceState): boolean {
   return (
-    !state.roundDone &&
     !state.finished &&
     state.reloadLeftMs <= 0 &&
     state.balls.length < BOUNCE_BOARD.maxBalls
@@ -339,37 +324,33 @@ export function anticipate(state: BounceState): BounceAnticipate {
   return { block, aim: aimToward({ x: block.x, y: block.y }) };
 }
 
-/** createBounceGame 的可选项；不传 = 旧行为（level 1） */
+/** createBounceGame 的可选项；不传 = 旧版第 1 轮的参数（level 1） */
 export interface BounceGameOptions {
-  /** 本局难度等级（1..BOUNCE_LEVEL_MAX）；缺省 1，与旧版逐帧一致 */
+  /** 本局难度等级（1..BOUNCE_LEVEL_MAX）；缺省 1，与旧版第 1 轮逐帧一致 */
   readonly level?: number;
 }
 
+/** 开一局（一局只有一轮）：level=1 的棋盘与旧版第 1 轮完全一致 */
 export function createBounceGame(seed: number, options: BounceGameOptions = {}): BounceState {
-  return startRound(
-    {
-      seed: seed >>> 0,
-      level: normalizeBounceLevel(options.level ?? BOUNCE_LEVEL_MIN),
-      round: 1,
-      blocks: [],
-      balls: [],
-      stars: 0,
-      comboBonus: 0,
-      shotsThisRound: 0,
-      shotsTotal: 0,
-      drops: 0,
-      reloadLeftMs: 0,
-      roundPauseLeftMs: 0,
-      accumMs: 0,
-      nextBallId: 1,
-      roundDone: false,
-      finished: false,
-    },
-    1,
-  );
+  const level = normalizeBounceLevel(options.level ?? BOUNCE_LEVEL_MIN);
+  const safeSeed = seed >>> 0;
+  return {
+    seed: safeSeed,
+    level,
+    blocks: buildRoundBlocks(safeSeed, level),
+    balls: [],
+    stars: 0,
+    comboBonus: 0,
+    shots: 0,
+    drops: 0,
+    reloadLeftMs: 0,
+    accumMs: 0,
+    nextBallId: 1,
+    finished: false,
+  };
 }
 
-/** 发射一颗球；第 6 / 12 / 18… 发会触发整体下沉（可能直接开花结束本轮） */
+/** 发射一颗球；第 6 / 12 / 18… 发会触发整体下沉（可能直接开花结束这一局） */
 export function fireBall(state: BounceState, aim: BounceAim): BounceFireResult {
   const events = emptyEvents();
   if (!canFire(state)) return { state, fired: false, events };
@@ -390,37 +371,24 @@ export function fireBall(state: BounceState, aim: BounceAim): BounceFireResult {
     ...state,
     balls: [...state.balls, ball],
     nextBallId: state.nextBallId + 1,
-    shotsThisRound: state.shotsThisRound + 1,
-    shotsTotal: state.shotsTotal + 1,
+    shots: state.shots + 1,
     reloadLeftMs: BOUNCE_BOARD.reloadMs,
   };
 
-  if (next.shotsThisRound % BOUNCE_DROP_EVERY_SHOTS === 0) next = sinkBlocks(next, events);
+  if (next.shots % BOUNCE_DROP_EVERY_SHOTS === 0) next = sinkBlocks(next, events);
 
   return { state: next, fired: true, events };
 }
 
 /**
  * 按固定步长推进一帧。dtMs 可以不是 8 的倍数，余数留在 accumMs 里。
- * 返回新的 state 与这一帧发生的事件（碎块 / 开花 / 换轮 / 结束）。
+ * 返回新的 state 与这一帧发生的事件（碎块 / 开花 / 一局结束）。
  */
 export function advanceBounce(state: BounceState, dtMs: number): BounceAdvanceResult {
   const events = emptyEvents();
   if (state.finished) return { state, events };
 
   const delta = Math.max(0, dtMs);
-
-  if (state.roundDone) {
-    const left = state.roundPauseLeftMs - delta;
-    if (left > 0) return { state: { ...state, roundPauseLeftMs: left }, events };
-    if (state.round >= BOUNCE_ROUNDS.length) {
-      events.finished = true;
-      return { state: { ...state, roundDone: false, finished: true, roundPauseLeftMs: 0 }, events };
-    }
-    const next = startRound(state, state.round + 1);
-    events.roundStarted = next.round;
-    return { state: next, events };
-  }
 
   let reloadLeftMs = state.reloadLeftMs;
   if (reloadLeftMs > 0) {
@@ -435,13 +403,13 @@ export function advanceBounce(state: BounceState, dtMs: number): BounceAdvanceRe
     next = stepPhysics(next, events);
     accumMs -= BOUNCE_STEP_MS;
     steps += 1;
-    if (next.roundDone || next.finished) {
+    if (next.finished) {
       accumMs = 0;
       break;
     }
   }
 
-  if (next.roundDone || next.finished) return { state: { ...next, accumMs }, events };
+  if (next.finished) return { state: { ...next, accumMs }, events };
   return { state: { ...next, reloadLeftMs, accumMs }, events };
 }
 
@@ -546,54 +514,34 @@ export function predictAim(
   return { points, bouncePoints, hitBlockId };
 }
 
-/** 自动通关：瞄准最近的方块 → 发射 → 定步长推进，直到一局结束（测试与诊断用） */
+/** 自动通关：瞄准最近的方块 → 发射 → 定步长推进，直到这一局打完（测试与诊断用） */
 export function playAutoplay(seed: number, options: BounceAutoplayOptions = {}): BounceAutoplayResult {
   const stepMs = Math.max(1, options.stepMs ?? BOUNCE_STEP_MS);
   const maxSteps = Math.max(1, options.maxSteps ?? 20_000);
   let state = createBounceGame(seed, {
     level: normalizeBounceLevel(options.level ?? BOUNCE_LEVEL_MIN),
   });
-  const rounds: BounceRoundSnapshot[] = [snapshotRound(state)];
   let steps = 0;
 
   while (!state.finished && steps < maxSteps) {
     if (canFire(state)) {
       state = fireBall(state, anticipate(state).aim).state;
     }
-    const advanced = advanceBounce(state, stepMs);
-    state = advanced.state;
-    if (advanced.events.roundStarted !== null) rounds.push(snapshotRound(state));
+    state = advanceBounce(state, stepMs).state;
     steps += 1;
   }
 
-  return { state, steps, finished: state.finished, score: scoreOf(state), rounds };
+  return { state, steps, finished: state.finished, score: scoreOf(state) };
 }
 
 /* ------------------------------ 内部实现 ------------------------------ */
 
-function startRound(state: BounceState, round: number): BounceState {
-  return {
-    ...state,
-    round,
-    blocks: buildRoundBlocks(state.seed, round, state.level),
-    balls: [],
-    shotsThisRound: 0,
-    drops: 0,
-    reloadLeftMs: 0,
-    roundPauseLeftMs: 0,
-    accumMs: 0,
-    roundDone: false,
-    finished: false,
-  };
-}
+/** 内部实现；导出只为让单测直接检查各等级的棋盘布局（场景不要绕开 state 调用它） */
+export function buildRoundBlocks(seed: number, level: number): BounceBlock[] {
+  const config = bounceConfigForLevel(level);
 
-/** 内部实现；导出只为让单测直接检查各等级 / 各轮的棋盘布局（场景不要绕开 state 调用它） */
-export function buildRoundBlocks(seed: number, round: number, level: number): BounceBlock[] {
-  const config = bounceRoundsForLevel(level)[round - 1];
-  if (config === undefined) return [];
-
-  // 每轮一个独立的确定性种子：同一局里每轮布局不同，重开能复现
-  const random = seededRandom((seed ^ Math.imul(round, 0x9e3779b1)) >>> 0);
+  // 一局只有一轮；种子盐沿用旧版第 1 轮（round=1），level=1 时布局与旧版第 1 轮逐块一致
+  const random = seededRandom((seed ^ Math.imul(1, 0x9e3779b1)) >>> 0);
   const rows = Math.ceil(config.blocks / BOUNCE_GRID.columns);
   const base = Math.floor(config.blocks / rows);
   const extra = config.blocks % rows;
@@ -606,7 +554,7 @@ export function buildRoundBlocks(seed: number, round: number, level: number): Bo
     const count = base + (row < extra ? 1 : 0);
     for (let slot = 0; slot < count; slot += 1) {
       blocks.push({
-        id: `b${round}-${index}`,
+        id: `b${index}`,
         col: slot,
         row,
         x: centerX + (slot - (count - 1) / 2) * cellWidth,
@@ -682,7 +630,7 @@ function stepPhysics(state: BounceState, events: MutableEvents): BounceState {
 
   let next: BounceState = { ...state, balls, blocks, stars, comboBonus };
   if (next.blocks.length > 0 && next.blocks.every((block) => !block.alive)) {
-    next = completeRound(next, events);
+    next = finishGame(next, events);
   }
   return next;
 }
@@ -779,26 +727,29 @@ function sinkBlocks(state: BounceState, events: MutableEvents): BounceState {
   );
   let next: BounceState = { ...state, blocks, drops: state.drops + 1 };
   const touching = blocks.some((block) => block.alive && block.y >= BOUNCE_GRID.flowerLine);
-  if (touching) next = completeRound(next, events);
+  if (touching) next = finishGame(next, events);
   return next;
 }
 
-function completeRound(state: BounceState, events: MutableEvents): BounceState {
+/**
+ * 一局唯一的收尾（没有失败）：活着的方块全部开花、星星照收，直接 finished。
+ * 场景收到 events.finished 就 finish(scoreOf(state)) 结算，不再开下一轮。
+ */
+function finishGame(state: BounceState, events: MutableEvents): BounceState {
   const alive = state.blocks.filter((block) => block.alive);
   const blocks = state.blocks.map((block) => (block.alive ? { ...block, alive: false } : block));
   const stars = state.stars + alive.length * BOUNCE_STARS_PER_BLOCK;
   for (const block of alive) events.flowered.push({ ...block, alive: false });
-  events.roundCompleted = state.round;
+  events.finished = true;
 
   return {
     ...state,
     blocks,
     stars,
     balls: [],
-    roundDone: true,
     reloadLeftMs: 0,
     accumMs: 0,
-    roundPauseLeftMs: BOUNCE_ROUND_PAUSE_MS,
+    finished: true,
   };
 }
 
@@ -836,10 +787,4 @@ function rayAabb(
   if (tMax < 0 || tMin > tMax) return null;
   if (tMin > 1e-6) return tMin;
   return tMax > 1e-6 ? tMax : null;
-}
-
-function snapshotRound(state: BounceState): BounceRoundSnapshot {
-  let bouncy = 0;
-  for (const block of state.blocks) if (block.kind === 'bouncy') bouncy += 1;
-  return { round: state.round, blocks: state.blocks.length, bouncy };
 }

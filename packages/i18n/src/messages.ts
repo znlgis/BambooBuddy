@@ -240,8 +240,6 @@ export const zhCN = {
   'arcade.reveal.body': '今天的四件小事都做到啦。竹林后面有一扇小门，推开门去看看吧。',
   'arcade.reveal.go': '推开门看看',
   'arcade.reveal.later': '等会儿再去',
-  'arcade.round': '第 {n} 轮',
-  'arcade.roundOf': '第 {n} / {total} 轮',
   'arcade.start': '开始玩',
   'arcade.tapStart': '点一下开始',
   'arcade.next': '下一个',

@@ -18,12 +18,10 @@ import {
   POPSTAR_COLS,
   POPSTAR_HINT_AFTER_MS,
   POPSTAR_MIN_GROUP,
-  POPSTAR_ROUNDS,
   POPSTAR_ROWS,
-  advanceRound,
   createPopstarState,
   findGroup,
-  goalForRound,
+  goalForLevel,
   largestGroup,
   popTone,
   remainingToGoal,
@@ -48,6 +46,9 @@ const FAMILY_COLORS: readonly number[] = [THEME.warmRed, THEME.gold, THEME.water
  *
  * 逻辑全在 popstar.logic：场景只负责画棋盘、把点按换算成格子、把结果演出。
  * autoplay 每 120ms 用 largestGroup 选最大组，再调用与真实点击完全相同的 popGroup。
+ *
+ * 一局只打一轮：收满本轮目标就直接结算回游戏厅，孩子可以一局接一局地玩；
+ * 难度只体现在目标数（level=1 就是老的 24 颗），一局内不再有第 2、3 轮。
  */
 class PopstarScene extends ArcadeScene {
   private readonly seed: number;
@@ -58,8 +59,6 @@ class PopstarScene extends ArcadeScene {
   private hintTween: Phaser.Tweens.Tween | null = null;
   private hintTimer: Phaser.Time.TimerEvent | null = null;
   private autoTimer: Phaser.Time.TimerEvent | null = null;
-  private roundTimer: Phaser.Time.TimerEvent | null = null;
-  private roundText: Phaser.GameObjects.Text | null = null;
   private goalText: Phaser.GameObjects.Text | null = null;
   private scoreText: Phaser.GameObjects.Text | null = null;
   private basketLabel: Phaser.GameObjects.Text | null = null;
@@ -73,12 +72,10 @@ class PopstarScene extends ArcadeScene {
   }
 
   create(): void {
-    // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留）：只影响每轮目标，棋盘与 level=1 完全一样
+    // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留）：只影响本局目标，棋盘与 level=1 完全一样
     this.state = createPopstarState(this.seed, { level: this.level });
     this.drawBackdrop();
     this.drawHeader(this.t('arcade.popstar.name'), this.t('arcade.popstar.desc'));
-    // 等级药丸放标题条右上：中间 HUD（轮次 / 目标 / 分数）和下面整块棋盘都占满了，默认位置会压住分数
-    this.drawLevelPill(this.W - 100, 52);
     this.drawBoardFrame();
     this.boardGfx = this.add.graphics().setDepth(4);
     this.drawHud();
@@ -89,7 +86,6 @@ class PopstarScene extends ArcadeScene {
     this.input.on('pointerdown', this.onPointerDown);
     this.events.once('shutdown', this.onShutdown);
 
-    this.announceRound(this.state.round + 1, POPSTAR_ROUNDS);
     if (!this.autoplay) this.say('arcade.popstar.intro');
     if (this.autoplay) this.scheduleAuto(180);
   }
@@ -170,31 +166,14 @@ class PopstarScene extends ArcadeScene {
     }
   }
 
-  // ---------------- 轮次与结算 ----------------
+  // ---------------- 一局结束：收满目标就直接结算回游戏厅 ----------------
 
   private handleRoundDone(): void {
-    if (this.gameOver || this.roundTimer !== null) return;
+    if (this.gameOver) return;
+    this.gameOver = true;
+    // 先让最后一颗星落进竹筐、音效收尾，再走统一的撒花结算（finish 负责发 arcade:complete 写档）
     this.sfx('correct');
-    this.showBanner(this.t('arcade.roundDone'), {
-      color: THEME.bamboo,
-      textColor: CSS.paper,
-      holdMs: 900,
-    });
-    const delay = this.instant ? 120 : this.autoplay ? 360 : 1500;
-    this.roundTimer = this.time.delayedCall(delay, () => {
-      this.roundTimer = null;
-      this.state = advanceRound(this.state);
-      if (this.state.status === 'done') {
-        this.gameOver = true;
-        this.finish(this.state.score);
-        return;
-      }
-      this.renderBoard();
-      this.syncHud();
-      this.announceRound(this.state.round + 1, POPSTAR_ROUNDS);
-      this.lastActionAt = this.now();
-      if (this.autoplay) this.scheduleAuto(120);
-    });
+    this.finish(this.state.score);
   }
 
   // ---------------- 8 秒提示 ----------------
@@ -260,8 +239,6 @@ class PopstarScene extends ArcadeScene {
     this.input.off('pointerdown', this.onPointerDown);
     this.autoTimer?.remove(false);
     this.autoTimer = null;
-    this.roundTimer?.remove(false);
-    this.roundTimer = null;
     this.clearHint();
   };
 
@@ -347,12 +324,12 @@ class PopstarScene extends ArcadeScene {
 
   private drawHud(): void {
     const bar = this.add.graphics().setDepth(10);
-    roundRect(bar, 14, 168, 170, 56, 28, THEME.card, THEME.outline, 4);
     roundRect(bar, this.W / 2 - 175, 168, 350, 56, 28, THEME.card, THEME.outline, 4);
     roundRect(bar, this.W - 134, 168, 120, 56, 28, THEME.card, THEME.outline, 4);
     starPath(bar, this.W - 114, HUD_Y, 17, 8, 5, THEME.gold, THEME.goldDeep, 3);
+    // 左边原来是「第 n / 3 轮」胶囊：一局只有一轮了，改成常驻难度药丸（Lv.N）
+    this.drawLevelPill(99, HUD_Y);
 
-    this.roundText = this.addText(99, HUD_Y, '', 24, CSS.ink, true).setDepth(11);
     this.goalText = this.addText(this.W / 2, HUD_Y, '', 24, CSS.ink, true).setDepth(11);
     this.scoreText = this.add
       .text(this.W - 72, HUD_Y, '0', textStyle(26, CSS.gold, true))
@@ -372,11 +349,8 @@ class PopstarScene extends ArcadeScene {
 
   private syncHud(): void {
     const state = this.state;
-    // 目标跟着本局等级走：高等级只是要收集更多，永远凑得够（上限远低于一局能收集的 96 颗）
-    const goal = goalForRound(state.round, state.level);
-    this.roundText?.setText(
-      this.t('arcade.roundOf', { n: state.round + 1, total: POPSTAR_ROUNDS }),
-    );
+    // 一局只有一轮：目标 = 老第 1 轮的 24 + (level-1)*2，跟着本局等级走，永远凑得够
+    const goal = goalForLevel(state.level);
     this.goalText?.setText(
       state.status === 'playing'
         ? this.t('arcade.goalPopped', { n: remainingToGoal(state) })

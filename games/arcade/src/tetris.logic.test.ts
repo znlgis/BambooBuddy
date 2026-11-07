@@ -154,13 +154,16 @@ describe('消行与计分', () => {
       result.state.lines * TETRIS_SCORE_PER_LINE +
         result.state.lockedPieces * TETRIS_SCORE_PER_PIECE,
     );
+    // 一局只打一轮：消 1 行就是这一局的终点
+    expect(result.finished).toBe(true);
+    expect(result.state.finished).toBe(true);
     // 上面一行（原来的第 12 行）整体落下来
     expect(result.state.board[13]![3]).toBe('O');
     expect(result.state.board[13]![4]).toBe('O');
     expect(result.state.board[12]!.every((cell) => cell === null)).toBe(true);
   });
 
-  it('一次消两行：计 2 行，分数 = 20 + 落子块数', () => {
+  it('一次消两行：计 2 行，同样直接完成这一局', () => {
     const board = emptyBoard();
     fill(board, 12, 'T', [0, 1, 2, 5, 6, 7]);
     fill(board, 13, 'T', [0, 1, 2, 5, 6, 7]);
@@ -170,13 +173,15 @@ describe('消行与计分', () => {
     expect(result.state.lines).toBe(2);
     expect(result.state.lockedPieces).toBe(1);
     expect(result.state.score).toBe(21);
-    expect(result.finished).toBe(false);
+    expect(result.finished).toBe(true);
+    expect(result.state.finished).toBe(true);
   });
 
-  it('消到第 3 行即完成，继续落子不再改变状态', () => {
+  it('消到第 1 行即完成一局，继续落子不再改变状态', () => {
+    expect(TETRIS_GOAL_LINES).toBe(1);
     const board = emptyBoard();
     fill(board, 13, 'T', [0, 1, 2, 5, 6, 7]);
-    let state = withActive({ ...createTetrisState(9), board, lines: 2, lockedPieces: 7, score: 27 }, {
+    let state = withActive({ ...createTetrisState(9), board }, {
       kind: 'O',
       rotation: 0,
       x: 3,
@@ -184,9 +189,11 @@ describe('消行与计分', () => {
     });
     const result = lockPiece(state);
     expect(result.finished).toBe(true);
+    expect(result.state.finished).toBe(true);
     expect(result.state.lines).toBe(TETRIS_GOAL_LINES);
-    expect(result.state.lockedPieces).toBe(8);
-    expect(result.state.score).toBe(38);
+    expect(result.state.lines).toBe(1);
+    expect(result.state.lockedPieces).toBe(1);
+    expect(result.state.score).toBe(11);
     expect(result.state.score).toBe(
       result.state.lines * TETRIS_SCORE_PER_LINE +
         result.state.lockedPieces * TETRIS_SCORE_PER_PIECE,
@@ -195,6 +202,8 @@ describe('消行与计分', () => {
     expect(tryMove(state, 1).moved).toBe(false);
     expect(tryRotate(state, 1).moved).toBe(false);
     expect(hardDrop(state).locked).toBe(false);
+    expect(stepDown(state).locked).toBe(false);
+    expect(lockPiece(state).locked).toBe(false);
     expect(advance(state, 5000).locked).toBe(false);
   });
 });
@@ -235,7 +244,7 @@ describe('重力与速度', () => {
 });
 
 describe('彩虹救援：堆到顶不失败', () => {
-  it('最下面 4 行消掉并计入 1 行进度，继续玩', () => {
+  it('最下面 4 行消掉并计入 1 行，直接完成这一局', () => {
     const board = emptyBoard();
     for (let row = 0; row <= 8; row += 1) fill(board, row, 'T', [0, 1, 2, 3, 4, 5, 6]);
     const state = withActive({ ...createTetrisState(13), board }, { kind: 'O', rotation: 0, x: 3, y: 10 });
@@ -246,7 +255,9 @@ describe('彩虹救援：堆到顶不失败', () => {
     expect(result.state.lines).toBe(1);
     expect(result.state.lockedPieces).toBe(1);
     expect(result.state.score).toBe(11);
-    expect(result.state.finished).toBe(false);
+    // 救援计入 1 行 = 达到单轮目标，直接完成
+    expect(result.state.finished).toBe(true);
+    expect(result.finished).toBe(true);
     // 原来的第 0 行被整体下移 4 行，顶部 4 行空出来
     expect(result.state.board[4]![0]).toBe('T');
     for (let row = 0; row < 4; row += 1) {
@@ -254,23 +265,30 @@ describe('彩虹救援：堆到顶不失败', () => {
     }
   });
 
-  it('救援也算 1 行：已消 2 行时救援直接完成', () => {
+  it('救援直接结束一局：之后不再抽方块、不会无限救援卡死', () => {
     const board = emptyBoard();
     for (let row = 0; row <= 8; row += 1) fill(board, row, 'T', [0, 1, 2, 3, 4, 5, 6]);
-    const state = withActive(
-      { ...createTetrisState(14), board, lines: 2, lockedPieces: 6, score: 26 },
-      { kind: 'O', rotation: 0, x: 3, y: 10 },
-    );
-    const result = lockPiece(state);
-    expect(result.rescues).toBe(1);
+    // 堆到顶的棋盘：落子后下一块出生即重叠 → 彩虹救援
+    const seeded = withActive({ ...createTetrisState(14), board }, {
+      kind: 'O',
+      rotation: 0,
+      x: 3,
+      y: 10,
+    });
+    const result = lockPiece(seeded);
+    expect(result.rescues).toBeGreaterThanOrEqual(1);
     expect(result.finished).toBe(true);
     expect(result.state.lines).toBe(TETRIS_GOAL_LINES);
-    expect(result.state.lockedPieces).toBe(7);
-    expect(result.state.score).toBe(37);
     expect(result.state.score).toBe(
       result.state.lines * TETRIS_SCORE_PER_LINE +
         result.state.lockedPieces * TETRIS_SCORE_PER_PIECE,
     );
+    // 完成后纯逻辑全部是 no-op，不会继续消行 / 卡死
+    const state = result.state;
+    for (let step = 0; step < 3; step += 1) {
+      expect(advance(state, 5000).locked).toBe(false);
+      expect(hardDrop(state).locked).toBe(false);
+    }
   });
 });
 
@@ -304,10 +322,12 @@ describe('AI：autoplay 的落点规划', () => {
     return state;
   }
 
-  it('40 块内至少消 3 行（多组种子）', () => {
+  it('一局（消 1 行）能在 40 块内完成（多组种子）', () => {
     for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
       const state = runAi(seed, 40);
       expect(state.finished).toBe(true);
+      // 单轮一局更短：autoplay 必须快速跑完（实测最多 8 块，这里留一倍余量）
+      expect(state.lockedPieces).toBeLessThanOrEqual(20);
       expect(state.lines).toBeGreaterThanOrEqual(TETRIS_GOAL_LINES);
       expect(state.score).toBe(
         state.lines * TETRIS_SCORE_PER_LINE +
@@ -409,6 +429,14 @@ describe('难度等级：状态透传与重力推进', () => {
     }
   });
 
+  it('level=1 的第一局参数与旧版第 1 轮一致：起始 1100ms、目标 1 行', () => {
+    const state = createTetrisState(2026);
+    expect(state.level).toBe(1);
+    expect(state.lines).toBe(0);
+    expect(fallIntervalForLines(state.lines, state.level)).toBe(1100);
+    expect(fallIntervalForLines(0)).toBe(1100);
+  });
+
   it('advance 用 state.level 决定重力间隔（不是写死 Lv.1）', () => {
     const level1 = withActive(createTetrisState(31), { kind: 'O', rotation: 0, x: 3, y: 0 });
     const level12 = withActive(createTetrisState(31, { level: 12 }), {
@@ -458,11 +486,12 @@ describe('难度等级：Lv.12 autoplay 仍能完成一局', () => {
     return state;
   }
 
-  it('最高等级 12 下 AI 仍能在 40 块内消满 3 行（不会卡死）', () => {
+  it('最高等级 12 下 AI 仍能在 40 块内完成一局（消满 1 行，不会卡死）', () => {
     for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
       const state = runAiAtLevel(seed, TETRIS_LEVEL_MAX, 40);
       expect(state.level).toBe(TETRIS_LEVEL_MAX);
       expect(state.finished).toBe(true);
+      expect(state.lockedPieces).toBeLessThanOrEqual(20);
       expect(state.lines).toBeGreaterThanOrEqual(TETRIS_GOAL_LINES);
       expect(state.score).toBe(
         state.lines * TETRIS_SCORE_PER_LINE +

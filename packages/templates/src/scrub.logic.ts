@@ -22,7 +22,11 @@ export const scrubLevelSchema = z.object({
       }),
     )
     .min(4)
-    .max(12),
+    .max(12)
+    // spot.id 是进度表的键：重复 id 会让「刷一个点」同时刷掉同 id 的点，进度与画面不一致
+    .refine((spots) => new Set(spots.map((spot) => spot.id)).size === spots.length, {
+      message: 'spots 的 id 不能重复',
+    }),
   /** 每个点要来回刷几次才干净 */
   rubs: z.number().int().min(1).max(5),
   /** 刷干净之后的收尾动作（冲水 / 擦干） */

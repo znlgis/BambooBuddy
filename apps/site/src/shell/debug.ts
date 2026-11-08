@@ -25,26 +25,33 @@ declare global {
 
 const MAX_EVENTS = 600;
 
+/** 模块级缓存：事件每秒可能好几条，不必每次都去 window 上判空 */
+let bridge: BambooDebugBridge | null = null;
+
 /** 启动即挂：e2e 可能在用户点任何东西之前就读 window.__bamboo */
 export function initDebugBridge(now = Date.now()): BambooDebugBridge {
   const w = window;
   if (!w.__bamboo) w.__bamboo = { events: [], save: emptySave(now) };
-  return w.__bamboo;
+  bridge = w.__bamboo;
+  return bridge;
+}
+
+function currentBridge(): BambooDebugBridge {
+  return bridge ?? initDebugBridge();
 }
 
 /** 事件名 + 细节拼成 'type:detail'（没有细节时就是 'type'，例如 session:start） */
 export function recordDebugEvent(type: string, detail?: string): void {
-  const bridge = initDebugBridge();
-  const entry = detail ? type + ':' + detail : type;
-  bridge.events.push(entry);
-  if (bridge.events.length > MAX_EVENTS) bridge.events.shift();
+  const events = currentBridge().events;
+  events.push(detail ? type + ':' + detail : type);
+  if (events.length > MAX_EVENTS) events.shift();
 }
 
 /** 存档快照：每次变更后同步（ProgressManager.snapshot() 返回的已经是新对象） */
 export function setDebugSave(save: SaveData): void {
-  initDebugBridge().save = save;
+  currentBridge().save = save;
 }
 
 export function recordDebugError(message: string): void {
-  initDebugBridge().lastError = message;
+  currentBridge().lastError = message;
 }

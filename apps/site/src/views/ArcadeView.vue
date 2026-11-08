@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ArcadeGameId } from '@bamboo/game-kit';
 import { computed, onMounted, ref } from 'vue';
-import { ARCADE_CATALOG } from '../arcade/catalog';
+import { ARCADE_GAMES } from '../arcade/catalog';
 import { navigate } from '../router';
 import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
@@ -17,7 +17,7 @@ const { t } = useI18n();
 const toast = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
-const games = ARCADE_CATALOG;
+const games = ARCADE_GAMES;
 const status = computed(() => progress.arcadeStatus);
 const remaining = computed(() => status.value.remainingPlays);
 const limitText = computed(() => t('arcade.limitReached', { n: status.value.dailyLimit }));
@@ -32,6 +32,9 @@ function showToast(text: string): void {
 }
 
 function start(gameId: ArcadeGameId): void {
+  // 读档完成前卡片还没渲染（下面的 ready 门控），这里再兜一层：
+  // 否则空档会算出"今天已经玩满 21 局"，给孩子一句莫名其妙的提示。
+  if (!progress.ready) return;
   if (!progress.arcadeAvailable(gameId)) {
     showToast(limitText.value);
     return;
@@ -48,7 +51,16 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- 存档没读完之前不出牌：空档会让三张卡都显示"今天玩过/局数用完" -->
+  <div
+    v-if="!progress.ready"
+    data-testid="arcade-lobby-loading"
+    class="mx-auto w-full max-w-xl px-4 pb-10 pt-3"
+  >
+    <p class="text-base font-bold text-bamboo-deep">{{ t('arcade.loading') }}</p>
+  </div>
   <section
+    v-else
     data-testid="arcade-view"
     class="mx-auto w-full max-w-xl px-4 pb-10 pt-3"
   >

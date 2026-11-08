@@ -18,39 +18,81 @@ const DB_NAME = 'bamboobuddy';
 const STORE_NAME = 'kv';
 const SAVE_KEY = 'save';
 
-function openDb(): Promise<IDBDatabase | null> {
+/** 存储不可用的原因：只用于日志/报错文案，不参与业务判断 */
+export type StorageIssue = 'unsupported' | 'timeout' | 'blocked' | 'error';
+
+interface OpenResult {
+  db: IDBDatabase | null;
+  issue: StorageIssue | null;
+}
+
+function openDb(): Promise<OpenResult> {
   return new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') {
-      resolve(null);
+      resolve({ db: null, issue: 'unsupported' });
       return;
     }
     // 隐私模式 / 存储被禁 / 旧标签页占着升级：open 可能永不回调 ——
     // 超时就退内存档，绝不让启动流程挂在这里（CHAGS 踩过的坑）。
-    const timer = setTimeout(() => resolve(null), 3000);
+    // 注意：这里只做「本次会话降级」，不缓存成永久结论 —— 别的标签页关掉、存储被授权之后，
+    // 下一次 openDb 仍有机会成功。
+    let settled = false;
+    const timer = setTimeout(() => settle(null, 'timeout'), 3000);
     const request = indexedDB.open(DB_NAME, 1);
-    const settle = (db: IDBDatabase | null): void => {
+
+    function settle(db: IDBDatabase | null, issue: StorageIssue | null): void {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve(db);
-    };
+      resolve({ db, issue });
+    }
+
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
     };
-    request.onsuccess = () => settle(request.result);
-    request.onerror = () => settle(null);
-    request.onblocked = () => settle(null);
+    // 连接建立后允许别的标签页升级：否则本页一直占着旧版本，对方永远 onblocked
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      settle(db, null);
+    };
+    request.onerror = () => settle(null, 'error');
+    // blocked：另一个标签页占着旧版本升级。不是永久失败 —— 但也不能不 settle，
+    // 所以先降级为内存，并把这个「本次会话没落盘」的事实通过 save() 抛给上层。
+    request.onblocked = () => settle(null, 'blocked');
   });
 }
 
-/** IndexedDB 存档；不可用时自动降级为内存（无痕模式 / 测试） */
+/** 存储不可用时的错误：上层（progress store）据此把 unsaved 置位、给孩子一句「可能没存上」 */
+export class StorageUnavailableError extends Error {
+  readonly issue: StorageIssue;
+
+  constructor(issue: StorageIssue) {
+    super('本地存储不可用（' + issue + '），本次进度只保留在内存里');
+    this.name = 'StorageUnavailableError';
+    this.issue = issue;
+  }
+}
+
+/**
+ * IndexedDB 存档；不可用时降级为内存（无痕模式 / 测试）。
+ *
+ * 降级的语义很重要：**读得到空档、但写得进去必须让上层知道**。
+ * 以前 `save()` 在无 db 时直接 return，调用方以为存档成功，
+ * 关掉页面才发现今天白玩 —— 现在改为 reject，走 progress store 的 unsaved 提示链路。
+ */
 export function createIdbProgressStore(): ProgressStore {
   let memory: SaveData | null = null;
   const dbPromise = openDb();
 
   return {
     async load(): Promise<SaveData> {
-      const db = await dbPromise;
-      if (!db) return memory ?? emptySave(Date.now());
+      const { db } = await dbPromise;
+      if (!db) {
+        // 降级为内存：本次会话仍可玩，读到的只是内存里的（可能是空的）快照
+        return memory ?? emptySave(Date.now());
+      }
       return new Promise((resolve) => {
         try {
           const tx = db.transaction(STORE_NAME, 'readonly');
@@ -70,9 +112,11 @@ export function createIdbProgressStore(): ProgressStore {
     },
     async save(data: SaveData): Promise<void> {
       memory = data;
-      const db = await dbPromise;
-      if (!db) return;
-      // 写失败必须让调用方知道（配额满 / 无痕模式）：存档静默丢失是最坏的结果
+      const { db, issue } = await dbPromise;
+      // 没有 IndexedDB 时必须让调用方知道：以前这里直接 return，
+      // 上层以为写成功了，孩子关掉页面才发现今天白玩（静默丢失是最坏的结果）。
+      if (!db) throw new StorageUnavailableError(issue ?? 'error');
+      // 写失败同样必须让调用方知道（配额满 / 无痕模式）
       await new Promise<void>((resolve, reject) => {
         try {
           const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -127,6 +171,11 @@ export function createWebAudioBus(): AudioBus {
     gain.gain.exponentialRampToValueAtTime(gainLevel, start + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     osc.connect(gain).connect(ctx.destination);
+    // 播完就断开：游戏厅「无限畅玩」可能连玩几十局，别让输入/输出节点长期挂在 audio graph 上
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
     osc.start(start);
     osc.stop(start + duration + 0.05);
   }
@@ -180,6 +229,16 @@ export function createWebAudioBus(): AudioBus {
     },
   };
 
+  /** 具名函数而不是 `this.stopSpeech()`：AudioBus 是注入式接口，解构调用时 this 会丢 */
+  function stopSpeechNow(): void {
+    const native = nativeTextToSpeech();
+    if (native) {
+      void native.stop().catch(() => undefined);
+      return;
+    }
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  }
+
   return {
     async unlock(): Promise<void> {
       const ctx = context();
@@ -231,28 +290,31 @@ export function createWebAudioBus(): AudioBus {
       if (match) utterance.voice = match;
       const done = new Promise<SpeechOutcome>((resolve) => {
         let settled = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
         const settle = (outcome: SpeechOutcome): void => {
           if (settled) return;
           settled = true;
+          if (timer !== null) clearTimeout(timer);
+          timer = null;
           resolve(outcome);
         };
         utterance.onend = () => settle('ended');
         utterance.onerror = () => settle('unavailable');
+        // 兜底：某些 WebView / 被 cancel 打断的 utterance 不会触发 end/error，
+        // 契约要求 done 必须 resolve（否则调用方永远停在"正在听"）。
+        // 上限按文本长度估（中文约 5 字/秒），再加 2 秒调度余量。
+        const estimateMs = Math.min(15_000, Math.max(2_000, (text.length / 5) * 1_000 + 2_000));
+        timer = setTimeout(() => settle('unavailable'), estimateMs);
         speechSynthesis.speak(utterance);
       });
       return { done };
     },
     stopSpeech(): void {
-      const native = nativeTextToSpeech();
-      if (native) {
-        void native.stop().catch(() => undefined);
-        return;
-      }
-      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+      stopSpeechNow();
     },
     setMuted(next: boolean): void {
       muted = next;
-      if (muted) this.stopSpeech();
+      if (muted) stopSpeechNow();
     },
     isMuted(): boolean {
       return muted;
@@ -279,18 +341,33 @@ export function createVisibilityLifecycle(): LifecycleBus {
   };
 }
 
-/** 默认不采集任何信息：只在本地留一份事件轨迹，方便调试与将来的家长报告 */
-export function createLocalTelemetry(): Telemetry {
-  const buffer: { type: string; at: number }[] = [];
+/**
+ * 默认不采集任何信息：只在本地留一份最近事件轨迹，方便排障。
+ *
+ * flush() 刻意不发任何请求（儿童产品默认不上报）；recent() 是本机调试出口 ——
+ * 以前 buffer 写完没人能读，属于死代码。
+ */
+export function createLocalTelemetry(): Telemetry & { recent(limit?: number): readonly TelemetryEntry[] } {
+  const buffer: TelemetryEntry[] = [];
   return {
     track(type): void {
       buffer.push({ type, at: Date.now() });
       if (buffer.length > 500) buffer.shift();
     },
+    recent(limit = 50): readonly TelemetryEntry[] {
+      return buffer.slice(-limit);
+    },
     async flush(): Promise<void> {
       // 刻意不发送：儿童产品默认不上报任何信息
     },
   };
+}
+
+export interface TelemetryEntry {
+  /** 事件名（task:complete / scene:enter 等） */
+  type: string;
+  /** 本机时间戳（毫秒）；不联网，仅用于本地排障 */
+  at: number;
 }
 
 export function createWebPlatform(): PlatformServices {

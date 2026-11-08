@@ -24,7 +24,6 @@ export interface ArcadeButtonOptions {
   color?: number;
   textColor?: string;
   fontSize?: number;
-  disabled?: boolean;
 }
 
 export interface BannerOptions {
@@ -50,6 +49,8 @@ export abstract class ArcadeScene extends Phaser.Scene {
   private exited = false;
   /** 同一时刻只留一条表扬条：轮次提示与「这一轮完成啦」不会叠在一起 */
   private banner: Phaser.GameObjects.Container | null = null;
+  /** 当前表扬条的自动收起定时器：替换/销毁时必须先取消，否则旧回调会对已销毁的对象补间 */
+  private bannerTimer: Phaser.Time.TimerEvent | null = null;
 
   protected constructor(key: string, ctx: ArcadeContext) {
     super(key);
@@ -185,7 +186,6 @@ export abstract class ArcadeScene extends Phaser.Scene {
     // 传居中矩形会让可点区域缩到左上 1/4（点按钮中间时好时坏）。
     setContainerHitArea(container, w, h);
     container.on('pointerdown', () => {
-      if (opts.disabled === true) return;
       this.sfx('tap');
       this.tweens.add({ targets: [face, text], y: 8, duration: 60, yoyo: true });
       onClick();
@@ -196,6 +196,8 @@ export abstract class ArcadeScene extends Phaser.Scene {
   /** 一闪而过的表扬条（连消 / 打完一轮），4 岁孩子不需要读长句 */
   protected showBanner(text: string, opts: BannerOptions = {}): void {
     // 新的一条顶掉旧的：三条游戏都会在轮次切换时连续发两条，叠在一起会挡住 HUD
+    this.bannerTimer?.remove(false);
+    this.bannerTimer = null;
     this.banner?.destroy(true);
     this.banner = null;
     const c = this.addPill(this.W / 2, opts.y ?? 330, text, {
@@ -207,8 +209,11 @@ export abstract class ArcadeScene extends Phaser.Scene {
     this.banner = c;
     c.setScale(0.7);
     this.tweens.add({ targets: c, scale: 1, duration: 180, ease: 'Back.easeOut' });
-    this.time.delayedCall(opts.holdMs ?? 1300, () => {
+    this.bannerTimer = this.time.delayedCall(opts.holdMs ?? 1300, () => {
+      this.bannerTimer = null;
       if (this.banner === c) this.banner = null;
+      // 已被新一条顶掉（或被场景销毁）时不再补间
+      if (!c.active) return;
       this.tweens.add({ targets: c, alpha: 0, duration: 260, onComplete: () => c.destroy(true) });
     });
   }

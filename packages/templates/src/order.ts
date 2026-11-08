@@ -252,6 +252,9 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
 
     private handleTap(stepId: string): void {
       if (this.finished) return;
+      // 所有步骤已经完成、只等收尾演出时，任何补点都忽略：
+      // 否则 tapStep 会因为「没有下一步」再返回一次 complete，重复 noteCorrect 并多画一个对勾
+      if (this.state.next >= level.steps.length) return;
       const prop = this.props.get(stepId);
       if (!prop) return;
       this.lastActionAt = this.ctx.services.now();
@@ -276,10 +279,11 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       this.markDone(prop);
       this.redrawProgress();
       this.updateStepLabel();
-      const duration = this.animateStep(prop);
+      this.animateStep(prop);
       if (result.status === 'complete') {
-        // 等最后一步的小动画播完再闭眼，不然孩子看不到"拍拍睡"做了什么
-        this.time.delayedCall(duration + 140, () => this.sleep());
+        // 落档优先：最后一步的动画一起步就收尾（内部同步发 task:complete）。
+        // 原来这里还要等 duration+140ms 才闭眼，那段时间按返回就把整局吃掉。
+        this.sleep();
       }
     }
 
@@ -358,8 +362,9 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
     }
 
     private markDone(prop: OrderProp): void {
-      const g = this.add.graphics().setDepth(14);
-      g.setPosition(prop.point.x + 78, prop.point.y - 78);
+      // 挂在道具容器上（而不是按 prop.point 画在屏幕坐标）：
+      // blanket / pat 这两步会道具挪到床上/身上，勾必须跟着道具一起走，否则勾与道具分家
+      const g = this.add.graphics();
       g.fillStyle(THEME.gold, 1);
       g.fillCircle(0, 0, 19);
       g.lineStyle(5, THEME.outline, 1);
@@ -368,6 +373,8 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       g.lineTo(-2, 8);
       g.lineTo(10, -8);
       g.strokePath();
+      g.setPosition(78, -78);
+      prop.node.add(g);
     }
 
     private shake(node: Phaser.GameObjects.Container): void {
@@ -402,7 +409,10 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       this.showHintRing(prop.point.x, prop.point.y);
       this.showHint(ctx.task.tip, 2600, STEP_LABEL_Y + 70);
       this.speak(prop.step.label);
-      this.time.delayedCall(3200, () => this.clearHintRing());
+      const ring = this.hintRing;
+      this.time.delayedCall(3200, () => {
+        if (this.hintRing === ring) this.clearHintRing();
+      });
     }
 
     private showHintRing(x: number, y: number): void {
@@ -412,15 +422,18 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       ring.lineStyle(9, THEME.gold, 0.95);
       ring.strokeCircle(0, 0, TAP_RADIUS + 6);
       this.hintRing = ring;
-      this.tweens.add({
-        targets: ring,
-        scale: 1.14,
-        alpha: 0.4,
-        duration: 520,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
+      // reduced-motion：光圈静止显示，不做无限脉冲
+      if (!this.reducedMotion) {
+        this.tweens.add({
+          targets: ring,
+          scale: 1.14,
+          alpha: 0.4,
+          duration: 520,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
     }
 
     private clearHintRing(): void {
@@ -453,11 +466,14 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
           alpha: 0,
           duration: 1800,
           delay: i * 240,
-          repeat: -1,
+          // reduced-motion：不无限上飘，放一次淡出就收
+          repeat: this.reducedMotion ? 0 : -1,
           ease: 'Sine.easeOut',
         });
       }
-      this.time.delayedCall(this.instant ? 160 : 380, () => this.finishTask({ praise: ctx.task.done }));
+      // 落档优先：完成判定一成立就同步发 task:complete（写档 / 星星 / 连续天数），
+      // 不在「已完成」和「已落档」之间留可被返回键打断的窗口；闭眼与 Z 的演出留在完成卡后面。
+      this.finishTask({ praise: ctx.task.done });
     }
 
     // ---------------- 自动通关 ----------------

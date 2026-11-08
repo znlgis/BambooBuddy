@@ -325,15 +325,18 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
       ring.lineStyle(9, THEME.gold, 0.95);
       ring.strokeCircle(0, 0, SLOT_RADIUS + 8);
       this.hintRing = ring;
-      this.tweens.add({
-        targets: ring,
-        scale: 1.12,
-        alpha: 0.4,
-        duration: 520,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
+      // reduced-motion：光圈静止显示，不做无限脉冲
+      if (!this.reducedMotion) {
+        this.tweens.add({
+          targets: ring,
+          scale: 1.12,
+          alpha: 0.4,
+          duration: 520,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
     }
 
     private clearSlotHint(): void {
@@ -359,7 +362,10 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
       if (!this.hand) this.hand = createHand(this, home.x, home.y + 46, 1.15);
       this.showHint(ctx.task.tip, 2600, 300);
       // 提示亮一会儿就收：常亮会变成"照着做"，孩子就不看竹竹了
-      this.time.delayedCall(3200, () => this.clearSlotHint());
+      const ring = this.hintRing;
+      this.time.delayedCall(3200, () => {
+        if (this.hintRing === ring) this.clearSlotHint();
+      });
     }
 
     private hideHand(): void {
@@ -378,7 +384,8 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
       this.clearSlotHint();
       this.redrawPanda('excited');
       sparkleAt(this, PANDA_POSE.x, PANDA_POSE.y - 120, THEME.gold, 10);
-      this.time.delayedCall(this.instant ? 120 : 480, () => this.finishTask({ praise: ctx.task.done }));
+      // 落档优先：完成判定一成立就同步 finishTask，不让返回键/切后台把这一局吃掉
+      this.finishTask({ praise: ctx.task.done });
     }
 
     // ---------------- 自动通关 ----------------

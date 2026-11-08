@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * 打包配置体检：不依赖 Rust / JDK / Android SDK，只检查"CI 真跑起来时会不会因为
@@ -7,8 +8,12 @@ import { join } from 'node:path';
  *
  * 接进 pnpm verify（scripts/verify.mjs），这样改坏了打包配置在本地就会红，
  * 不用等一个 tag 推上去才发现。
+ *
+ * 两个纪律：
+ * 1. 仓库根由脚本位置推导，不依赖 cwd —— 从子目录直接 `node scripts/check-packaging.mjs` 也能跑；
+ * 2. 文件读不到只记 1 次失败（以前 `readText` 记一次、调用处再对空串断言记一次，错误数虚高）。
  */
-const ROOT = process.cwd();
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let errors = 0;
 
 function ok(message) {
@@ -31,11 +36,12 @@ function readJson(relativePath) {
     return null;
   }
 }
+/** 读不到时返回 null（已经记过一次失败）：调用方据此跳过后续断言，避免同一个缺失重复计数 */
 function readText(relativePath) {
   const path = join(ROOT, relativePath);
   if (!existsSync(path)) {
     fail('缺少文件：' + relativePath);
-    return '';
+    return null;
   }
   return readFileSync(path, 'utf8');
 }
@@ -64,23 +70,27 @@ if (tauri) {
   if (tauri.bundle?.active === true) ok('bundle.active = true');
   else fail('tauri.conf.json 的 bundle.active 应为 true');
 }
-if (cargo.includes('tauri-build') && cargo.includes('tauri =')) {
-  ok('Cargo.toml 引用了 tauri 2 与 tauri-build');
-} else if (cargo) {
-  fail('Cargo.toml 缺少 tauri / tauri-build 依赖');
+if (cargo !== null) {
+  if (cargo.includes('tauri-build') && cargo.includes('tauri =')) {
+    ok('Cargo.toml 引用了 tauri 2 与 tauri-build');
+  } else {
+    fail('Cargo.toml 缺少 tauri / tauri-build 依赖');
+  }
 }
 
 console.log('\n[安卓壳 Capacitor]');
 const cap = readText('apps/mobile/capacitor.config.ts');
-const appIdMatch = /appId:\s*'([^']+)'/.exec(cap);
-const appId = appIdMatch?.[1] ?? null;
-if (appId) ok('capacitor appId = ' + appId);
-else fail('capacitor.config.ts 缺 appId');
-if (cap.includes("webDir: '../site/dist'")) ok('webDir 指向站点产物 apps/site/dist');
-else fail("capacitor.config.ts 的 webDir 应为 '../site/dist'");
+if (cap !== null) {
+  const appIdMatch = /appId:\s*'([^']+)'/.exec(cap);
+  const appId = appIdMatch?.[1] ?? null;
+  if (appId) ok('capacitor appId = ' + appId);
+  else fail('capacitor.config.ts 缺 appId');
+  if (cap.includes("webDir: '../site/dist'")) ok('webDir 指向站点产物 apps/site/dist');
+  else fail("capacitor.config.ts 的 webDir 应为 '../site/dist'");
+}
 
 const manifest = readText('apps/mobile/android/app/src/main/AndroidManifest.xml');
-if (manifest) {
+if (manifest !== null) {
   if (/android:screenOrientation="portrait"/.test(manifest)) ok('竖屏锁定');
   else fail('AndroidManifest.xml 缺少 android:screenOrientation="portrait"');
   if (manifest.includes('android:allowBackup="false"')) ok('本地存档不参与云备份');
@@ -88,10 +98,19 @@ if (manifest) {
 }
 
 const gradle = readText('apps/mobile/android/app/build.gradle');
-if (gradle) {
+if (gradle !== null) {
   const namespace = /namespace\s*=\s*"([^"]+)"/.exec(gradle)?.[1] ?? null;
-  if (appId && namespace === appId) ok('namespace 与 appId 一致（' + namespace + '）');
-  else fail('app/build.gradle 的 namespace 应为 ' + appId + '，实际：' + (namespace ?? '(缺失)'));
+  // namespace 必须等于 capacitor.config.ts 的 appId；appId 读不到时只自检不比较，
+  // 避免 "capacitor.config.ts 缺 appId" 之后再报一次 "namespace 应为 null"
+  const appId = cap === null ? null : (/appId:\s*'([^']+)'/.exec(cap)?.[1] ?? null);
+  if (appId === null) {
+    if (namespace === null) fail('app/build.gradle 缺少 namespace');
+    else ok('build.gradle 的 namespace = ' + namespace + '（appId 未读到，跳过一致性校验）');
+  } else if (namespace === appId) {
+    ok('namespace 与 appId 一致（' + namespace + '）');
+  } else {
+    fail('app/build.gradle 的 namespace 应为 ' + appId + '，实际：' + (namespace ?? '(缺失)'));
+  }
   if (gradle.includes('BAMBOO_VERSION_NAME')) ok('versionName 支持 CI 注入（BAMBOO_VERSION_NAME）');
   else fail('app/build.gradle 缺少 BAMBOO_VERSION_NAME 注入');
   if (gradle.includes('BAMBOO_VERSION_CODE')) ok('versionCode 支持 CI 注入（BAMBOO_VERSION_CODE）');
@@ -99,22 +118,25 @@ if (gradle) {
   if (gradle.includes('keystore.properties')) ok('签名可读 keystore.properties（缺省回落 debug）');
   else fail('app/build.gradle 未引用 keystore.properties');
 }
+
 const strings = readText('apps/mobile/android/app/src/main/res/values/strings.xml');
-if (strings.includes('app_name') && /[\u4e00-\u9fff]/.test(strings)) ok('默认应用名为中文');
-else fail('values/strings.xml 应有中文 app_name');
+if (strings !== null) {
+  if (strings.includes('app_name') && /[\u4e00-\u9fff]/.test(strings)) ok('默认应用名为中文');
+  else fail('values/strings.xml 应有中文 app_name');
+}
 const stringsEn = readText('apps/mobile/android/app/src/main/res/values-en/strings.xml');
-if (stringsEn.includes('Bamboo Buddy')) ok('英文系统显示 Bamboo Buddy');
-else fail('values-en/strings.xml 缺少英文应用名 Bamboo Buddy');
+if (stringsEn !== null) {
+  if (stringsEn.includes('Bamboo Buddy')) ok('英文系统显示 Bamboo Buddy');
+  else fail('values-en/strings.xml 缺少英文应用名 Bamboo Buddy');
+}
 
 console.log('\n[自动打包工作流]');
 const release = readText('.github/workflows/release.yml');
-if (release) {
+if (release !== null) {
   for (const needle of ['windows-latest', 'assembleRelease', 'tauri build', 'softprops/action-gh-release', 'upload-artifact']) {
     if (release.includes(needle)) ok('release.yml 含 ' + needle);
     else fail('release.yml 缺少 ' + needle);
   }
-} else {
-  fail('缺少 .github/workflows/release.yml');
 }
 
 console.log('\n[本地脚本]');

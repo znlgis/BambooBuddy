@@ -41,6 +41,8 @@ export abstract class BaseScene extends Phaser.Scene {
   private lastAdvanceAt = Number.NEGATIVE_INFINITY;
   /** 完成结算只做一次（名字避开子场景自己的 finished 守卫，private 同名会撞类型） */
   private completionShown = false;
+  /** 退出只发一次：完成卡片上的两个按钮在同一场景里，连点不能让宿主并发重启 */
+  private exited = false;
 
   protected constructor(key: string, ctx: GameContext) {
     super(key);
@@ -106,8 +108,21 @@ export abstract class BaseScene extends Phaser.Scene {
     // 命中区必须是「左上角原点」的整颗按钮，不能传居中矩形：
     // Container 的 displayOrigin 会被命中测试再加一次，居中矩形会让可点区域缩到左上 1/4。
     setContainerHitArea(container, w, h);
+    if (opts.disabled) {
+      // 禁用态必须是**看得见的禁用**：以前只 return 不响应，按钮还是完整的彩色厚底，
+      // 孩子会以为没点中而反复戳。这里整体降透明度并去掉交互。
+      container.setAlpha(0.45);
+      container.disableInteractive();
+      return container;
+    }
+    // 每个按钮自己一把连点锁：和 tapAnywhere 共用 lastAdvanceAt 会误伤
+    // （完成卡片刚弹出时，孩子上一局最后一次点击可能还在 350ms 内）。
+    let lastTapAt = Number.NEGATIVE_INFINITY;
     container.on('pointerdown', () => {
-      if (opts.disabled) return;
+      const now = this.ctx.services.now();
+      // 连点两下「再玩一次」不能触发两次退出/重开
+      if (!isTapArmed(now, lastTapAt)) return;
+      lastTapAt = now;
       this.sfx('tap');
       this.tweens.add({ targets: [face, text], y: 8, duration: 60, yoyo: true });
       onClick();
@@ -294,6 +309,10 @@ export abstract class BaseScene extends Phaser.Scene {
   }
 
   private exit(reason: 'complete' | 'replay'): void {
+    // 一次性守卫：完成卡片的两个按钮在同一场景里都还活着，
+    // 双击「再玩一次」会发两次 session:exit:replay，宿主就会并发重启两局（叠 canvas）。
+    if (this.exited) return;
+    this.exited = true;
     this.ctx.emit('session:exit', { reason, progress: 1 });
     this.ctx.requestExit(reason === 'replay' ? 'replay' : undefined);
   }

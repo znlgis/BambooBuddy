@@ -6,6 +6,7 @@ import { navigate } from '../router';
 import { createArcadeContext } from '../shell/createArcadeContext';
 import { recordDebugError, recordDebugEvent } from '../shell/debug';
 import { platform } from '../shell/platform';
+import { startPlayClock } from '../shell/playClock';
 import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 import { useSettings } from '../stores/settings';
@@ -36,7 +37,6 @@ const { t, locale } = useI18n();
 
 let disposed = false;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
-let playTimer: ReturnType<typeof setInterval> | null = null;
 let offPause: (() => void) | null = null;
 let offResume: (() => void) | null = null;
 
@@ -189,19 +189,17 @@ function leaveNow(): void {
 
 onMounted(() => {
   void start();
-  playTimer = setInterval(() => {
-    void progress.addSeconds(30);
-  }, 30_000);
 });
+
+// 休息提醒的数据来源：小游戏同样计入玩耍时长（合并落盘，见 playClock）
+startPlayClock((seconds) => progress.addSeconds(seconds));
 
 onBeforeUnmount(async () => {
   disposed = true;
   continuing = false;
-  if (playTimer !== null) clearInterval(playTimer);
   if (toastTimer !== null) clearTimeout(toastTimer);
   if (continueTimer !== null) clearTimeout(continueTimer);
   continueTimer = null;
-  playTimer = null;
   toastTimer = null;
   releaseLifecycle();
   platform.audio.stopSpeech();
@@ -230,6 +228,7 @@ onBeforeUnmount(async () => {
         data-testid="arcade-sound"
         class="pointer-events-auto flex min-h-14 min-w-14 items-center justify-center rounded-2xl bg-ink/75 px-3 text-2xl text-white active:scale-95"
         :aria-label="settings.muted ? t('sound.off') : t('sound.on')"
+        :aria-pressed="!settings.muted"
         @click="settings.toggle()"
       >
         {{ settings.muted ? '🔇' : '🔊' }}

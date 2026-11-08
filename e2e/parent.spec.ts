@@ -127,3 +127,34 @@ test('清档：长按 3 秒清空存档，回小屋后竹笋回到初始值，�
   const replay = await saveSnapshot(page);
   expect(replay?.tasks.brush.completions ?? 0).toBeGreaterThanOrEqual(1);
 });
+
+/**
+ * 家长页门禁（会话级令牌）：
+ * 家长页里放着「长按 3 秒清档」，而 #/parent 是一个可书写、可后退的地址 ——
+ * 所以它不能只靠"入口藏得深"。真实规则是：
+ * - 长按标题成功才发令牌，进家长页；
+ * - 一离开家长页令牌立刻吊销，浏览器后退键再回来必须被弹回小屋；
+ * - 直接手输 / 分享 #/parent 同样进不去（没有令牌）。
+ * 刷新仍停留在家长页是允许的（令牌在 sessionStorage 里），由上面的用例覆盖。
+ */
+test('家长门禁：回小屋后按浏览器后退，不能回到家长页；直链 #/parent 也回小屋', async ({ page }) => {
+  await page.goto('/');
+  await expect(homeView(page)).toBeVisible({ timeout: 20_000 });
+  await enterParent(page);
+
+  // 从家长页正常回小屋：这一步会吊销令牌
+  await page.getByTestId('parent-back').click();
+  await expect(homeView(page)).toBeVisible({ timeout: 20_000 });
+
+  // 浏览器后退：历史里还有 #/parent，但没有令牌，必须被弹回小屋（或至少不再显示家长页）
+  await page.goBack();
+  await expect(parentView(page)).toBeHidden({ timeout: 15_000 });
+  await expect(homeView(page)).toBeVisible({ timeout: 15_000 });
+
+  // 直接输地址同样进不去
+  await page.goto('/#/parent');
+  await expect(parentView(page)).toBeHidden({ timeout: 15_000 });
+  await expect(homeView(page)).toBeVisible({ timeout: 15_000 });
+  expect(await lastError(page)).toBeUndefined();
+});
+

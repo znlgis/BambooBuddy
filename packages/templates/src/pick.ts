@@ -232,18 +232,16 @@ export function createPickScene(ctx: GameContext, level: PickLevel): Phaser.Type
       this.clearAuto();
       this.hideComfort();
       this.clearCards();
-      if (this.autoplay || this.instant) {
-        this.finishTask({ praise: this.ctx.task.done });
-        return;
-      }
-      this.time.delayedCall(240, () => this.finishTask({ praise: this.ctx.task.done }));
+      // 落档优先：完成判定一成立就同步 finishTask（原来非调试模式要等 240ms）
+      this.finishTask({ praise: this.ctx.task.done });
     }
 
     // ---------------- 绘制 ----------------
 
     private drawScenery(): void {
       const bg = this.add.graphics().setDepth(0);
-      drawRoom(bg, 'bedroom', this.W, this.H);
+      // 房间来自关卡脚本（schema 的 room 是 ROOMS 枚举），不要在这里写死
+      drawRoom(bg, this.level.room, this.W, this.H);
       drawRug(bg, this.W / 2, 880, 560, 160, THEME.lavender);
     }
 

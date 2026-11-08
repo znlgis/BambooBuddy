@@ -226,6 +226,16 @@ export interface SaveData {
   days: Record<string, DayRecord>;
 }
 
+/**
+ * 存档读写接口（平台层实现：Web 是 IndexedDB）。
+ *
+ * 失败语义必须明确，否则上层会把"读坏了"当成"新玩家"：
+ * - `load()` **只有真的读不出来才 reject**；这台设备还没存过档时应当 resolve 一份空档
+ *   （`emptySave`），不能拿 reject 表示"没有存档"。ProgressManager 会把 reject 原样抛给
+ *   外壳（提示家长 + 拒绝写入），用来防止"读档失败 → 空档 → 第一次写就把旧进度覆盖"。
+ * - `save()` 失败必须 reject（配额满 / 隐私模式 / 存储被禁）：调用方据此把"这次可能没存上"
+ *   告诉孩子，而不是静默丢进度。
+ */
 export interface ProgressStore {
   load(): Promise<SaveData>;
   save(data: SaveData): Promise<void>;

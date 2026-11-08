@@ -274,6 +274,16 @@ export function starPath(
   g.fillPath();
 }
 
+/**
+ * 爱心。
+ *
+ * 以前是「两个圆 + 一个三角」拼出来的，描边只描两个圆 —— 结果每颗心都是
+ * 两个带描边的圆浮在一块无描边的心体上，底部的尖角完全没轮廓（完成卡片
+ * 的 hearts、pick 模板的情绪图标都能看到）。现在用一条连续的心形参数曲线
+ * 一次填充 + 一次描边，轮廓完整、也不会有内部交线。
+ */
+const HEART_POINTS = 48;
+
 export function heartPath(
   g: Phaser.GameObjects.Graphics,
   cx: number,
@@ -282,22 +292,37 @@ export function heartPath(
   fill: number = THEME.pink,
   outline: number | null = THEME.outline,
 ): void {
-  g.fillStyle(fill, 1);
-  g.fillCircle(cx - size * 0.28, cy - size * 0.12, size * 0.34);
-  g.fillCircle(cx + size * 0.28, cy - size * 0.12, size * 0.34);
-  g.fillTriangle(
-    cx - size * 0.57,
-    cy - size * 0.02,
-    cx + size * 0.57,
-    cy - size * 0.02,
-    cx,
-    cy + size * 0.6,
-  );
+  // 标准心形参数方程，按 size 缩放（x ∈ [-16,16]、y ∈ [-17,12]）
+  const sx = (size * 1.14) / 32;
+  const sy = (size * 1.06) / 29;
+  const at = (i: number): { x: number; y: number } => {
+    const t = (Math.PI * 2 * i) / HEART_POINTS;
+    const sin = Math.sin(t);
+    const x = 16 * sin * sin * sin;
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    // cy 上移约 2.5 个单位，让视觉重心与旧的「两圆一三角」一致
+    return { x: cx + x * sx, y: cy - (y - 2.5) * sy };
+  };
+
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < HEART_POINTS; i += 1) points.push(at(i));
+  const first = points[0]!;
+
   if (outline !== null) {
     g.lineStyle(4, outline, 0.9);
-    g.strokeCircle(cx - size * 0.28, cy - size * 0.12, size * 0.34);
-    g.strokeCircle(cx + size * 0.28, cy - size * 0.12, size * 0.34);
+    g.beginPath();
+    g.moveTo(first.x, first.y);
+    for (const point of points.slice(1)) g.lineTo(point.x, point.y);
+    g.closePath();
+    g.strokePath();
   }
+
+  g.fillStyle(fill, 1);
+  g.beginPath();
+  g.moveTo(first.x, first.y);
+  for (const point of points.slice(1)) g.lineTo(point.x, point.y);
+  g.closePath();
+  g.fillPath();
 }
 
 export function cloud(

@@ -25,6 +25,8 @@ const stageName = computed(() =>
 );
 const toast = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
+/** 正在请求中的物件：连点两次不能让同一次解锁跑两遍 */
+const pendingIds = ref<Set<string>>(new Set());
 
 function flash(message: string): void {
   toast.value = message;
@@ -49,6 +51,11 @@ function isActive(item: CatalogItem): boolean {
     : progress.roomId(item.slot as RoomSlot) === item.id;
 }
 
+/** 小窝物件是"换上去"而不是"穿/脱"：已经在用的那件没有可做的操作 */
+function isSettled(item: CatalogItem): boolean {
+  return !isClothing(item) && isActive(item);
+}
+
 function actionLabel(item: CatalogItem): string {
   if (!progress.owns(item.id)) return t('dress.unlock');
   if (isClothing(item)) return isActive(item) ? t('dress.takeOff') : t('dress.equip');
@@ -62,6 +69,8 @@ function actionClass(item: CatalogItem): string {
 
 /** 解锁失败也要说人话：分别告诉孩子"竹笋不够 / 碎片不够 / 竹竹还没长大" */
 function unlockMessage(reason: string | undefined, item: CatalogItem): string {
+  // 连点的第二次会走到这里：东西已经是他的了，说"还没解锁"会让孩子以为自己失败了
+  if (reason === 'owned') return t('dress.unlocked');
   if (reason === 'level') return t('dress.needLevel', { n: item.unlockLevel });
   if (reason === 'noShoots') return t('dress.noShoots');
   if (reason === 'noFragments') return t('dress.noFragments');
@@ -69,14 +78,24 @@ function unlockMessage(reason: string | undefined, item: CatalogItem): string {
 }
 
 async function act(item: CatalogItem): Promise<void> {
-  if (!progress.owns(item.id)) {
-    const outcome = await progress.unlock(item.id);
-    if (!outcome) return;
-    flash(outcome.ok ? t('dress.unlocked') : unlockMessage(outcome.reason, item));
-    return;
+  if (pendingIds.value.has(item.id)) return;
+  pendingIds.value.add(item.id);
+  try {
+    if (!progress.owns(item.id)) {
+      const outcome = await progress.unlock(item.id);
+      if (!outcome) {
+        // 写盘失败：按钮不能一直卡在"处理中"，给一句"没存上"
+        flash(t('save.unsaved'));
+        return;
+      }
+      flash(outcome.ok ? t('dress.unlocked') : unlockMessage(outcome.reason, item));
+      return;
+    }
+    const outcome = await progress.equip(item.id);
+    if (outcome && !outcome.ok) flash(t('dress.locked'));
+  } finally {
+    pendingIds.value.delete(item.id);
   }
-  const outcome = await progress.equip(item.id);
-  if (outcome && !outcome.ok) flash(t('dress.locked'));
 }
 
 onBeforeUnmount(() => {
@@ -164,8 +183,9 @@ onBeforeUnmount(() => {
           <button
             type="button"
             :data-testid="'dress-action-' + item.id"
-            class="mt-2 min-h-12 w-full rounded-full px-3 py-2 text-base font-bold active:scale-95"
+            class="mt-2 min-h-12 w-full rounded-full px-3 py-2 text-base font-bold active:scale-95 disabled:opacity-60"
             :class="actionClass(item)"
+            :disabled="isSettled(item) || pendingIds.has(item.id)"
             @click="act(item)"
           >
             {{ actionLabel(item) }}

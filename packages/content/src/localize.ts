@@ -12,10 +12,6 @@ export interface DetailPatch {
   levelScript?: unknown;
 }
 
-export function hasSummaryPatch(patch: SummaryPatch): boolean {
-  return patch.title !== undefined || patch.habit !== undefined || patch.diary !== undefined || patch.tip !== undefined;
-}
-
 export function localizeSummary(summary: TaskSummary, patch: SummaryPatch | undefined): TaskSummary {
   if (patch === undefined) return summary;
   return {
@@ -61,8 +57,5 @@ export function findCjk(value: unknown, path = ''): string[] {
   }
   return [];
 }
-
-/** 只保留图片/emoji 的字段不做翻译检查（内容里没有位图，但 emoji 含扩展区字符） */
-export const LOCALIZED_ONLY_FIELDS = ['title', 'habit', 'diary', 'tip', 'intro', 'done', 'retry'] as const;
 
 export type { Locale };

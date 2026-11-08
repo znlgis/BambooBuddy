@@ -366,11 +366,30 @@ describe('pick：认情绪 + 安慰', () => {
     expect(done.state.done).toBe(true);
   });
 
-  it('每轮选项必须包含答案且不重复', () => {
-    expect(pickLevelSchema.safeParse({
-      room: 'bedroom',
-      rounds: [{ target: 'sad', question: '？', options: ['happy', 'angry', 'angry'], comfort: 'hug' }],
-    }).success).toBe(false);
+  it('每轮选项必须包含答案且不重复（在 2 条合法轮次的基线上只让第 2 轮违规）', () => {
+    // rounds 必须给足 2 条，否则会先被 schema 的 .min(2) 拒掉，
+    // 看上去通过、实际根本没测到「选项重复」这条规则。
+    const baseline = pickLevel;
+    expect(pickLevelSchema.safeParse(baseline).success).toBe(true);
+
+    const duplicated = pickLevelSchema.safeParse({
+      ...baseline,
+      rounds: [baseline.rounds[0]!, { ...baseline.rounds[1]!, options: ['happy', 'happy', 'sad'] }],
+    });
+    expect(duplicated.success).toBe(false);
+    if (!duplicated.success) {
+      expect(duplicated.error.issues.map((issue) => issue.path.join('.'))).toContain('rounds.1.options');
+      expect(duplicated.error.issues.map((issue) => issue.message)).toContain('选项不能重复');
+    }
+
+    const missingTarget = pickLevelSchema.safeParse({
+      ...baseline,
+      rounds: [baseline.rounds[0]!, { ...baseline.rounds[1]!, target: 'angry' }],
+    });
+    expect(missingTarget.success).toBe(false);
+    if (!missingTarget.success) {
+      expect(missingTarget.error.issues.map((issue) => issue.message)).toContain('选项里必须包含正确答案 angry');
+    }
   });
 });
 
@@ -394,11 +413,21 @@ describe('learn：认颜色 / 形状 / 数字', () => {
     expect(chooseOption(state, learnLevel, 0).status).toBe('done');
   });
 
-  it('答案下标必须落在选项范围内', () => {
-    expect(learnLevelSchema.safeParse({
-      room: 'classroom',
-      rounds: [{ kind: 'number', question: '？', options: [{ label: '1' }, { label: '2' }], answer: 5 }],
-    }).success).toBe(false);
+  it('答案下标必须落在选项范围内（在 2 条合法轮次的基线上只让第 2 题越界）', () => {
+    // 同理：rounds 只给 1 条会先撞 .min(2)，真正的 answer 越界约束就测不到。
+    const baseline = learnLevel;
+    expect(learnLevelSchema.safeParse(baseline).success).toBe(true);
+
+    const bad = learnLevelSchema.safeParse({
+      ...baseline,
+      rounds: [baseline.rounds[0]!, { ...baseline.rounds[1]!, answer: 5 }],
+    });
+    expect(bad.success).toBe(false);
+    if (!bad.success) {
+      const paths = bad.error.issues.map((issue) => issue.path.join('.'));
+      expect(paths).toContain('rounds.1.answer');
+      expect(bad.error.issues.map((issue) => issue.message).join(' ')).toContain('answer 必须在选项下标范围内');
+    }
   });
 });
 

@@ -259,16 +259,22 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
       ring.lineStyle(9, THEME.gold, 0.95);
       ring.strokeCircle(0, 0, Math.max(bin.w, bin.h) / 2 + 30);
       this.hintRing = ring;
-      this.tweens.add({
-        targets: ring,
-        scale: 1.12,
-        alpha: 0.4,
-        duration: 520,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
+      // reduced-motion：光圈静止显示，不做无限脉冲
+      if (!this.reducedMotion) {
+        this.tweens.add({
+          targets: ring,
+          scale: 1.12,
+          alpha: 0.4,
+          duration: 520,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
+      // 只清自己这一圈：连续两次提示时，前一次的延时不能把后一次刚建的圈清掉
+      this.time.delayedCall(2600, () => {
+        if (this.hintRing === ring) this.clearHintRing();
       });
-      this.time.delayedCall(2600, () => this.clearHintRing());
     }
 
     private clearHintRing(): void {
@@ -306,7 +312,8 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
       this.hideHand();
       this.clearHintRing();
       for (const bin of this.bins.values()) sparkleAt(this, bin.x, bin.y - 40, THEME.gold, 4);
-      this.time.delayedCall(this.instant ? 120 : 480, () => this.finishTask({ praise: ctx.task.done }));
+      // 落档优先：完成判定一成立就同步 finishTask，不让返回键/切后台把这一局吃掉
+      this.finishTask({ praise: ctx.task.done });
     }
 
     // ---------------- 自动通关 ----------------

@@ -5,20 +5,39 @@ import { CARE_KINDS, EMOTIONS, ROOMS } from './common';
  * 情绪认知：先认出竹竹现在的心情（三张脸里选一张），
  * 再安慰他（抱抱 / 拍拍 / 击掌）。选错不惩罚，只是换一句提示。
  */
-export const pickLevelSchema = z.object({
-  room: z.enum(ROOMS),
-  rounds: z
-    .array(
-      z.object({
-        target: z.enum(EMOTIONS),
-        question: z.string().min(1).max(80),
-        options: z.array(z.enum(EMOTIONS)).length(3),
-        comfort: z.enum(CARE_KINDS),
-      }),
-    )
-    .min(2)
-    .max(3),
-});
+export const pickLevelSchema = z
+  .object({
+    room: z.enum(ROOMS),
+    rounds: z
+      .array(
+        z.object({
+          target: z.enum(EMOTIONS),
+          question: z.string().min(1).max(80),
+          options: z.array(z.enum(EMOTIONS)).length(3),
+          comfort: z.enum(CARE_KINDS),
+        }),
+      )
+      .min(2)
+      .max(3),
+  })
+  .superRefine((level, ctx) => {
+    level.rounds.forEach((round, index) => {
+      if (!round.options.includes(round.target)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rounds', index, 'options'],
+          message: `选项里必须包含正确答案 ${round.target}`,
+        });
+      }
+      if (new Set(round.options).size !== round.options.length) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rounds', index, 'options'],
+          message: '选项不能重复',
+        });
+      }
+    });
+  });
 export type PickLevel = z.infer<typeof pickLevelSchema>;
 export type Emotion = (typeof EMOTIONS)[number];
 export type CareKind = (typeof CARE_KINDS)[number];

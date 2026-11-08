@@ -68,14 +68,6 @@ export function findItem(id: string): CatalogItem | undefined {
   return CATALOG.find((item) => item.id === id);
 }
 
-export function itemsForClothes(): CatalogItem[] {
-  return CATALOG.filter((item) => CLOTHING_SLOTS.includes(item.slot as ClothingSlot));
-}
-
-export function itemsForRoom(): CatalogItem[] {
-  return CATALOG.filter((item) => ROOM_SLOTS.includes(item.slot as RoomSlot));
-}
-
 export function itemsForSlot(slot: CatalogSlot): CatalogItem[] {
   return CATALOG.filter((item) => item.slot === slot);
 }

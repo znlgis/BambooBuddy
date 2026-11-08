@@ -28,9 +28,15 @@ export const TaskSummarySchema = z.object({
   color: hexColor,
   timeSlots: z.array(z.enum(TIME_SLOTS)).min(1).max(3),
   template: z.enum(TEMPLATE_IDS),
-  /** 单局目标时长：30–90 秒（儿童注意力） */
+  /**
+   * 单局目标时长：硬约束 20–120 秒（儿童注意力），内容里按 30–90 秒设计。
+   * 注释曾写死 30–90 而 schema 是 20–120，改内容时以这里的 min/max 为准。
+   */
   durationHintSec: z.number().int().min(20).max(120),
-  ageRange: z.tuple([z.number().int().min(3), z.number().int().max(9)]),
+  /** 适用年龄区间 [最小, 最大]：顺序必须递增（[8, 4] 这种写反的旧数据要拦下） */
+  ageRange: z
+    .tuple([z.number().int().min(3), z.number().int().max(9)])
+    .refine(([min, max]) => min <= max, { message: 'ageRange 的最小年龄不能大于最大年龄' }),
   /** 成长阶段解锁：1 = 一开始就能玩 */
   unlockLevel: z.number().int().min(1).max(4).default(1),
   /** 完成一次带来的状态变化（只增不减，纯正向） */

@@ -19,6 +19,14 @@ export function defineArcadeGame(definition: ArcadeGameDefinition): ArcadeModule
     manifest: definition.manifest,
 
     async mount(ctx: ArcadeContext): Promise<void> {
+      // 防重入：外壳重试 / 无限畅玩续局时，若上一局没销毁干净就先收掉，
+      // 否则同一个 host 容器里会叠两个 canvas（残留 rAF 循环）。
+      // 注：日常玩法的 defineGame 走 @bamboo/templates 的 createGameLifecycle；
+      // 小游戏包不能 import templates（会多一条 workspace 依赖），所以这里保留同构实现。
+      if (game !== null) {
+        game.destroy(true);
+        game = null;
+      }
       game = createPhaserGame(ctx, { scenes: definition.scenes(ctx) });
     },
 

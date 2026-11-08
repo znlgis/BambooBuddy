@@ -24,7 +24,7 @@ const { t, locale } = useI18n();
 
 const version = (sitePkg as { version?: string }).version ?? '0.0.0';
 
-const weekCount = computed(() => weekCompletedCount(progress.save, platform.now()));
+const weekCount = computed(() => weekCompletedCount(progress.save, progress.now));
 
 /** 今天玩了几局隐藏小游戏（只读本机存档；家长想知道时间花在哪） */
 const todayArcade = computed(() => progress.todayRecord.arcadePlays);
@@ -48,15 +48,21 @@ const habits = computed(() => {
 /* ---------------- 清除存档：按住 3 秒，按住时有进度 ---------------- */
 
 const HOLD_MS = 3000;
+/** 手指抖动/按钮边缘的容差：轻微移出不算放弃，移得远了才算 */
+const HOLD_TOLERANCE_PX = 24;
 const holding = ref(false);
 const holdProgress = ref(0);
 const cleared = ref(false);
+/** 清档失败要说出来：家长以为已经清掉、其实还在，是最不该发生的事 */
+const clearFailed = ref(false);
 let ticker: ReturnType<typeof setInterval> | null = null;
 let startedAt = 0;
+let holdRect: DOMRect | null = null;
 
 function stopHold(): void {
   holding.value = false;
   holdProgress.value = 0;
+  holdRect = null;
   if (ticker !== null) {
     clearInterval(ticker);
     ticker = null;
@@ -64,16 +70,27 @@ function stopHold(): void {
 }
 
 async function finishClear(): Promise<void> {
+  // run() 先 await init()：清档前存档一定已经读完，不会清到一半又被旧档盖回来
   await progress.clear();
-  cleared.value = true;
   holding.value = false;
+  if (progress.unsaved) {
+    // 写盘失败：不能显示"已清除"，否则刷新后旧档又回来了
+    clearFailed.value = true;
+    holdProgress.value = 0;
+    return;
+  }
+  clearFailed.value = false;
   holdProgress.value = 100;
+  cleared.value = true;
 }
 
 function startHold(): void {
   if (cleared.value || ticker !== null) return;
+  clearFailed.value = false;
   holding.value = true;
   holdProgress.value = 0;
+  // 长按进度必须用真实时钟：progress.now 是每分钟才走一次的响应式时间源，
+  // 拿它算进度会让进度条冻住、3 秒长按要等下一次 tick 才判满。
   startedAt = platform.now();
   ticker = setInterval(() => {
     const pct = Math.min(100, ((platform.now() - startedAt) / HOLD_MS) * 100);
@@ -86,6 +103,28 @@ function startHold(): void {
       void finishClear();
     }
   }, 80);
+}
+
+/** 按下时记下按钮矩形，按住过程中按坐标判断手指还在不在按钮上 */
+function onHoldPointerDown(event: PointerEvent): void {
+  if (cleared.value) return;
+  const target = event.currentTarget;
+  holdRect = target instanceof HTMLElement ? target.getBoundingClientRect() : null;
+  startHold();
+}
+
+/**
+ * 触屏上 pointerleave 不可靠（指针有隐式捕获，滑出元素不一定会发边界事件），
+ * 所以"离开按钮"用坐标判断：超出矩形 + 容差就当作放弃，避免长按中途滑出去也清档。
+ */
+function onHoldPointerMove(event: PointerEvent): void {
+  if (!holding.value || holdRect === null) return;
+  const outside =
+    event.clientX < holdRect.left - HOLD_TOLERANCE_PX ||
+    event.clientX > holdRect.right + HOLD_TOLERANCE_PX ||
+    event.clientY < holdRect.top - HOLD_TOLERANCE_PX ||
+    event.clientY > holdRect.bottom + HOLD_TOLERANCE_PX;
+  if (outside) stopHold();
 }
 
 const clearLabel = computed(() => {
@@ -147,8 +186,10 @@ onBeforeUnmount(stopHold);
         <button
           type="button"
           data-testid="parent-clear"
-          class="relative min-h-12 min-w-64 overflow-hidden whitespace-nowrap rounded-full border-2 border-warm-red px-6 py-3 text-base font-bold text-warm-red active:scale-95"
-          @pointerdown="startHold"
+          class="relative min-h-12 min-w-64 overflow-hidden whitespace-nowrap rounded-full border-2 border-warm-red px-6 py-3 text-base font-bold text-warm-red active:scale-95 disabled:opacity-60"
+          :disabled="cleared"
+          @pointerdown="onHoldPointerDown"
+          @pointermove="onHoldPointerMove"
           @pointerup="stopHold"
           @pointerleave="stopHold"
           @pointercancel="stopHold"
@@ -162,6 +203,11 @@ onBeforeUnmount(stopHold);
           <span class="relative">{{ clearLabel }}</span>
         </button>
       </div>
+
+      <!-- 清档失败必须说出来：家长以为清干净了、刷新后又回来，是最坏的谎 -->
+      <p v-if="clearFailed" data-testid="parent-clear-failed" class="mt-2 text-base text-gold" role="alert">
+        {{ t('save.unsaved') }}
+      </p>
 
       <p class="mt-6 text-base text-inksoft">{{ t('parent.version', { v: version }) }}</p>
 

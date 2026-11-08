@@ -20,6 +20,8 @@ export type EmotionFace = 'happy' | 'sad' | 'angry' | 'scared' | 'sleepy';
 export type ShapeKind = 'circle' | 'square' | 'triangle' | 'star' | 'heart';
 
 const FLOOR_TOP = 980;
+/** 夜晚窗外/室内暗色的统一色值（drawWindow('night') 与 drawMoon 的月牙缺口共用） */
+const NIGHT_SKY = 0x4b5a78;
 
 /** 背景只负责"这是哪个房间"，交互物件与竹竹由模板按关卡坐标摆放 */
 export function drawRoom(
@@ -70,12 +72,15 @@ export function drawRoom(
   g.fillStyle(wall, 1);
   g.fillRect(0, 0, w, h);
   g.fillStyle(shade(wall, 0.96), 1);
-  for (let x = 60; x < w; x += 110) {
-    for (let y = 90; y < FLOOR_TOP - 90; y += 110) {
-      if ((x + y) % 220 === 0) g.fillCircle(x, y, 5);
+  // 隔点铺一层极淡的墙纸颗粒：原判定 (x + y) % 220 === 0 恒不成立
+  // （x 从 60 起、y 从 90 起，步长都是 110，x+y 对 220 取模只会是 40 或 150），
+  // 于是这段循环一笔都没画出来。改成按格点奇偶交错，才能真的看见纹理。
+  for (let col = 0, x = 60; x < w; x += 110, col += 1) {
+    for (let row = 0, y = 90; y < FLOOR_TOP - 90; y += 110, row += 1) {
+      if ((col + row) % 2 === 0) g.fillCircle(x, y, 5);
     }
   }
-  g.fillStyle(shade(floor, 1), 1);
+  g.fillStyle(floor, 1);
   g.fillRect(0, FLOOR_TOP, w, h - FLOOR_TOP);
   g.fillStyle(shade(floor, 0.9), 1);
   for (let x = -20; x < w; x += 90) {
@@ -133,7 +138,7 @@ export function drawWindow(
   mode: 'day' | 'night' = 'day',
 ): void {
   roundRect(g, x - 10, y - 10, w + 20, h + 20, 18, THEME.wood, THEME.outline, 6);
-  roundRect(g, x, y, w, h, 10, mode === 'night' ? 0x4b5a78 : THEME.sky, null, 0);
+  roundRect(g, x, y, w, h, 10, mode === 'night' ? NIGHT_SKY : THEME.sky, null, 0);
   if (mode === 'day') {
     circle(g, x + w * 0.72, y + h * 0.28, 26, THEME.sun, null, 0);
     cloud(g, x + w * 0.12, y + h * 0.62, w * 0.5);
@@ -147,9 +152,20 @@ export function drawWindow(
   g.fillRect(x + w, y - 16, 26, h + 50);
 }
 
-export function drawMoon(g: Phaser.GameObjects.Graphics, x: number, y: number, r: number): void {
+/**
+ * 月牙：挖掉的那一块必须和**它背后的颜色**一致，否则在浅色卡片上会变成一枚深蓝实心圆。
+ *
+ * @param cutout 月亮背后（天空/卡片）的颜色；默认是夜晚窗色，与 drawWindow('night') 对齐。
+ */
+export function drawMoon(
+  g: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  r: number,
+  cutout: number = NIGHT_SKY,
+): void {
   circle(g, x, y, r, THEME.sun, null, 0);
-  circle(g, x + r * 0.45, y - r * 0.2, r * 0.82, 0x4b5a78, null, 0);
+  circle(g, x + r * 0.45, y - r * 0.2, r * 0.82, cutout, null, 0);
 }
 
 export function drawBambooStalk(
@@ -521,7 +537,8 @@ export function drawOrderIcon(
     g.lineBetween(x, y, x, y - 30 * s);
     g.lineBetween(x, y, x + 22 * s, y + 8 * s);
   } else if (icon === 'moon') {
-    drawMoon(g, x, y, 46 * s);
+    // 图标画在浅色卡片上：缺口用卡片底色，才是"月牙"而不是"深蓝圆"
+    drawMoon(g, x, y, 46 * s, THEME.card);
   } else {
     // 小熊玩偶
     circle(g, x - 30 * s, y - 34 * s, 18 * s, THEME.wood);

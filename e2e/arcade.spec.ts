@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { SAVE_SCHEMA_VERSION } from '../packages/game-kit/src/contract';
+import { ARCADE_DAILY_PLAYS } from '../packages/progress/src/arcade';
 import { waitEvent } from './shared';
 
 /**
@@ -15,16 +17,22 @@ import { waitEvent } from './shared';
  * 这样每条用例只验证自己那件事，失败时原因清楚。
  */
 
-const TODAY = (() => {
+/**
+ * 本地日键（与 packages/progress/src/day.ts 的 dayKey 同口径）。
+ *
+ * 必须是**函数**而不是模块级常量：一次 `pnpm e2e` 可能跨零点，模块级常量会让
+ * 播种的日记录和运行期的"今天"错开，用例偶发失败且极难查。
+ */
+function todayKey(): string {
   const date = new Date();
   const pad = (value: number): string => String(value).padStart(2, '0');
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
-})();
+}
 
 interface SeedOptions {
   /** 今天已经完成的任务 id（不同任务） */
   completed: string[];
-  /** 今天已经完整玩完几局（三款合计；普通模式上限 7） */
+  /** 今天已经完整玩完几局（三款合计；普通模式上限 ARCADE_DAILY_PLAYS） */
   arcadePlays?: number;
   /** 今天已经玩过的小游戏（日记/家长页用；新规则不再按它拦人） */
   arcade?: string[];
@@ -35,23 +43,25 @@ interface SeedOptions {
 }
 
 /**
- * 把一份最小存档写进 IndexedDB 再刷新：schemaVersion 用最新（4），
+ * 把一份最小存档写进 IndexedDB 再刷新：schemaVersion 取 `SAVE_SCHEMA_VERSION`，
  * 缺的字段（pet/tasks/奖励等）由 migrate 的 sanitize 逐条兜底。
+ * 写死版本号的话，下次升 v5 后种子会被当成旧档迁移一遍，用例静默失真。
  */
 async function seedSave(page: Page, options: SeedOptions): Promise<void> {
+  const today = todayKey();
   const arcade: Record<string, { best: number; plays: number; lastPlayedDay: string }> = {};
   for (const [id, plays] of Object.entries(options.plays ?? {})) {
-    arcade[id] = { best: 10, plays, lastPlayedDay: TODAY };
+    arcade[id] = { best: 10, plays, lastPlayedDay: today };
   }
   const save = {
-    schemaVersion: 4,
+    schemaVersion: SAVE_SCHEMA_VERSION,
     updatedAt: Date.now(),
     pet: {},
     tasks: {},
     arcade,
     days: {
-      [TODAY]: {
-        date: TODAY,
+      [today]: {
+        date: today,
         completed: options.completed,
         arcade: options.arcade ?? [],
         arcadePlays: options.arcadePlays ?? 0,
@@ -112,7 +122,7 @@ async function waitPlaysToday(page: Page, plays: number, timeoutMs = 30_000): Pr
       const bridge = (window as unknown as { __bamboo?: { save?: BridgeSave } }).__bamboo;
       return bridge?.save?.days?.[args.today]?.arcadePlays === args.plays;
     },
-    { today: TODAY, plays },
+    { today: todayKey(), plays },
     { timeout: timeoutMs, polling: 50 },
   );
 }
@@ -158,7 +168,10 @@ test('解锁：完成第四件不同的小事 → 小门浮层 → 游戏厅三�
 });
 
 test('每日 21 局：seed 已满 21 局后卡片仍可见，但点卡片与深链都被拦在游戏厅', async ({ page }) => {
-  await seedSave(page, { completed: ['brush', 'wash', 'feed', 'dress'], arcadePlays: 21 });
+  await seedSave(page, {
+    completed: ['brush', 'wash', 'feed', 'dress'],
+    arcadePlays: ARCADE_DAILY_PLAYS,
+  });
   await page.goto('/#/arcade');
   await expect(page.getByTestId('arcade-view')).toBeVisible({ timeout: 30_000 });
 
@@ -180,14 +193,17 @@ test('每日 21 局：seed 已满 21 局后卡片仍可见，但点卡片与深�
 });
 
 test('每日 21 局：seed 已玩 20 局 → 还能再玩一局变 21 局，下一局被拦', async ({ page }) => {
-  await seedSave(page, { completed: ['brush', 'wash', 'feed', 'dress'], arcadePlays: 20 });
+  await seedSave(page, {
+    completed: ['brush', 'wash', 'feed', 'dress'],
+    arcadePlays: ARCADE_DAILY_PLAYS - 1,
+  });
   await page.goto('/#/arcade');
   await expect(page.getByTestId('arcade-view')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('arcade-plays-left')).toContainText('1');
 
   // 第 21 局：可以进去，跑完写档后今天变成 21 局
   await playOnceFromLobby(page, 'popstar');
-  await waitPlaysToday(page, 21);
+  await waitPlaysToday(page, ARCADE_DAILY_PLAYS);
   await waitGamePlays(page, 'popstar', 1);
 
   // 第 22 局：留在游戏厅，给提示
@@ -232,7 +248,7 @@ test('隐藏触发：连点竹竹 7 次，当天小门直接打开、三款无�
 test('无限畅玩：普通模式已满 21 局，触发竹林小路后仍能完成第 22 局', async ({ page }) => {
   await seedSave(page, {
     completed: ['brush', 'wash', 'feed', 'dress'],
-    arcadePlays: 21,
+    arcadePlays: ARCADE_DAILY_PLAYS,
     arcadeSecret: true,
   });
   await page.goto('/#/arcade');
@@ -243,7 +259,7 @@ test('无限畅玩：普通模式已满 21 局，触发竹林小路后仍能完�
   await page.goto('/#/arcade/popstar?autoplay=1&instant=1');
   await expect(page.getByTestId('arcade-play-view')).toBeVisible({ timeout: 30_000 });
   expect(await waitEvent(page, 'arcade:complete:popstar', 40_000), '消灭星星没有完成').toBe(true);
-  await waitPlaysToday(page, 22);
+  await waitPlaysToday(page, ARCADE_DAILY_PLAYS + 1);
   await waitGamePlays(page, 'popstar', 1);
   await expect(page.getByTestId('arcade-view')).toBeVisible({ timeout: 20_000 });
 });
@@ -262,7 +278,7 @@ test('无限畅玩：一局结束后自动接着下一局、不返回游戏厅�
     page.evaluate((today) => {
       const bridge = (window as unknown as { __bamboo?: { save?: BridgeSave } }).__bamboo;
       return bridge?.save?.days?.[today]?.arcadePlays ?? 0;
-    }, TODAY);
+    }, todayKey());
 
   /** 真实点击棋盘，直到今天完成 target 局（消灭星星一局收满 24 颗即结束） */
   async function playUntil(target: number): Promise<void> {

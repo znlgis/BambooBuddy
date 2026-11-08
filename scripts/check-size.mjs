@@ -73,12 +73,33 @@ if (!existsSync(join(DIST, 'index.html'))) {
 const files = walk(DIST);
 const html = readFileSync(join(DIST, 'index.html'), 'utf8');
 
-/** index.html 里 src/href 指向的 js/css（modulepreload 的 href 同样是首屏成本） */
-const referenced = new Set(
-  [...html.matchAll(/(?:src|href)="\.?\/?([^"]+\.(?:js|css))"/g)].map((match) =>
-    join(DIST, match[1]).replace(/\\/g, '/'),
-  ),
-);
+/**
+ * index.html 里 src/href 指向的 js/css（modulepreload 的 href 同样是首屏成本）。
+ *
+ * 容忍三种真实写法，避免"漏认 → 首屏被当成懒加载 → 预算静默放宽"：
+ * - 单引号或双引号；
+ * - 带 query / hash（`?v=...`、`#x`）；
+ * - 相对路径（本项目 base: './'）或绝对路径（`/assets/...`）。
+ * `data:` / `http(s):` 之类的外链不参与本地体积统计，直接跳过。
+ */
+const ATTR_URL = /(?:src|href)\s*=\s*(["'])([^"']+)\1/g;
+const JS_OR_CSS = /\.(?:js|css)(?:[?#].*)?$/i;
+
+function firstScreenRefs(markup) {
+  const out = new Set();
+  for (const match of markup.matchAll(ATTR_URL)) {
+    const raw = match[2].trim();
+    if (!JS_OR_CSS.test(raw)) continue;
+    if (/^(?:data|https?|blob):/i.test(raw)) continue;
+    // 去掉 query / hash 再拼本地路径；开头的 ./ 或 / 都按 dist 根处理
+    const clean = raw.replace(/[?#].*$/, '').replace(/^\.?\//, '');
+    if (clean.length === 0) continue;
+    out.add(join(DIST, clean).replace(/\\/g, '/'));
+  }
+  return out;
+}
+
+const referenced = firstScreenRefs(html);
 
 /** 内联 <script>/<style> 的文本：同样要用户先下载，必须计入首屏 */
 const inlineBytes = [...html.matchAll(/<(script|style)[^>]*>([\s\S]*?)<\/\1>/g)]
@@ -88,6 +109,33 @@ const inlineBytes = [...html.matchAll(/<(script|style)[^>]*>([\s\S]*?)<\/\1>/g)]
 if (referenced.size === 0) {
   console.error('  ✗ index.html 里没有任何 js/css 引用 —— 产物结构可能变了，先人工确认再改这个脚本');
   failure += 1;
+}
+
+/**
+ * 额外断言：入口脚本确实被认出来了。
+ *
+ * 只判"引用集合非空"不够 —— 如果产物把入口换成不带扩展名的 URL、或正则又漏认，
+ * 入口就会溜进"懒加载 chunk"里，首屏预算看起来宽松了，实际孩子要多下一份大文件。
+ * 这里找 index.html 里 <script type="module" ... src>，要求它出现在 referenced 中。
+ */
+const entrySrc = [...html.matchAll(/<script\b[^>]*\btype=["']module["'][^>]*>/gi)]
+  .map((match) => /\bsrc\s*=\s*(["'])([^"']+)\1/i.exec(match[0])?.[2] ?? null)
+  .find((src) => src !== null);
+if (entrySrc === null) {
+  console.error('  ✗ index.html 里找不到 <script type="module" src="..."> —— 产物结构可能变了，先人工确认');
+  failure += 1;
+} else {
+  const clean = entrySrc.replace(/[?#].*$/, '').replace(/^\.?\//, '');
+  const entryPath = join(DIST, clean).replace(/\\/g, '/');
+  if (!referenced.has(entryPath)) {
+    console.error('  ✗ 入口脚本没有被识别为首屏资源：' + entrySrc + '（首屏预算会因此漏算）');
+    failure += 1;
+  } else if (!existsSync(entryPath)) {
+    console.error('  ✗ index.html 引用了不存在的入口脚本：' + entrySrc);
+    failure += 1;
+  } else {
+    console.log('  · 入口脚本已识别：' + entrySrc);
+  }
 }
 
 console.log('\n首屏必须下载的：');

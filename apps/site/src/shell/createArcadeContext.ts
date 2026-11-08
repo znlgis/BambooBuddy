@@ -30,6 +30,13 @@ function detailOf<K extends keyof ArcadeEventMap>(
 }
 
 /**
+ * 遥测接口是按任务事件（GameEventMap）建模的，彩蛋事件不在其中；
+ * 这里把类型放宽成"字符串事件"后再转交，保证两条玩法路径同一个出口、
+ * 事件轨迹与遥测不会一条有、一条没有（两者都只进本地缓冲，不联网）。
+ */
+const trackLocalEvent = platform.telemetry.track as (type: string, payload: unknown) => void;
+
+/**
  * 交给隐藏小游戏的运行时上下文：与 createGameContext 同一套平台出口、同一套调试开关，
  * 只是没有任务内容（彩蛋不是内容 JSON 驱动的，也不该碰任务存档）。
  */
@@ -53,6 +60,7 @@ export function createArcadeContext(
     reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     debug: readDebugOptions(),
     emit(type, payload) {
+      trackLocalEvent(type, payload);
       recordDebugEvent(type, detailOf(type, payload));
       hooks.onEvent(type, payload);
     },

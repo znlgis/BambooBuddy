@@ -2,7 +2,7 @@ import type { ArcadeGameId, ArcadeProgress, DayRecord, SaveData } from '@bamboo/
 import { ARCADE_GAME_IDS } from '@bamboo/game-kit';
 import { DAILY_TASK_TARGET } from './daily';
 import { dayKey } from './day';
-import { ensureDay } from './save';
+import { emptyDay, ensureDay } from './save';
 
 /**
  * 普通模式每天最多玩几局（三款游戏合计）。
@@ -74,6 +74,8 @@ export function arcadeStatus(save: SaveData, now: number): ArcadeStatus {
 export function arcadeAvailable(save: SaveData, gameId: ArcadeGameId, now: number): boolean {
   const day = save.days[dayKey(now)];
   if (!arcadeUnlocked(day) || day === undefined) return false;
+  // 额度是三款**共用**的（普通模式每天 ARCADE_DAILY_PLAYS 局），gameId 只为调用处对称；
+  // 保留参数是为了兼容外壳的调用签名（改签名要同步 apps/site/src/stores/progress.ts）。
   void gameId;
   return arcadeUnlimited(day) || arcadePlaysToday(day) < ARCADE_DAILY_PLAYS;
 }
@@ -90,8 +92,10 @@ export function withArcadePlay(
 ): SaveData {
   const today = dayKey(now);
   const data = ensureDay(save, now);
-  const day = data.days[today]!;
-  const safeScore = Math.max(0, Math.floor(score));
+  const day = data.days[today] ?? emptyDay(today);
+  // NaN / Infinity 过不了 Math.max + Math.floor（结果仍是 NaN），会让 best 变成 NaN；
+  // 落盘后 sanitize 又把 NaN 兜底成 0，等于把历史最高分抹掉 —— 所以这里必须先夹取。
+  const safeScore = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
   const previous: ArcadeProgress = data.arcade[gameId] ?? { best: 0, plays: 0, lastPlayedDay: null };
   return {
     ...data,

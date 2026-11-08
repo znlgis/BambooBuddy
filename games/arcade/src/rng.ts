@@ -23,14 +23,6 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-export function randomInt(random: () => number, min: number, max: number): number {
-  return min + Math.floor(random() * (max - min + 1));
-}
-
-export function pickOne<T>(items: readonly T[], random: () => number): T {
-  return items[Math.min(items.length - 1, Math.floor(random() * items.length))]!;
-}
-
 export function shuffled<T>(items: readonly T[], random: () => number): T[] {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i -= 1) {

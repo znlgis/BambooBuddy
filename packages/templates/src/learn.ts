@@ -13,12 +13,13 @@ import {
   textStyle,
   THEME,
 } from '@bamboo/phaser-kit';
+import type Phaser from 'phaser';
 import { SCENE_KEYS } from './layout';
 import { chooseOption, createLearnState, currentQuestion } from './learn.logic';
 import type { LearnLevel, LearnState, Shape } from './learn.logic';
 
 /** 选项卡片：比"≥190×240"再宽一点，孩子不用瞄准 */
-const CARD = { w: 200, h: 250, gap: 24, top: 910 } as const;
+const CARD = { w: 200, h: 250, gap: 24, top: 910, margin: 40 } as const;
 /** 竹竹站在右侧的小垫子上，把黑板与卡片中间留给孩子看题 */
 const PANDA = { x: 588, y: 780, scale: 0.62 } as const;
 
@@ -58,6 +59,8 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
     private questionText: Phaser.GameObjects.Text | null = null;
     private progressText: Phaser.GameObjects.Text | null = null;
     private cards: OptionCard[] = [];
+    /** 当前一题的卡片宽度（选项数不同会收缩，命中判定必须用同一个值） */
+    private cardW: number = CARD.w;
     /** 答对后到下一题之间的短暂锁：防止连点把下一题也点掉 */
     private locked = false;
     /** 自动通关与换题延时都走墙钟 setTimeout：无头 CI 帧率低时 Phaser Clock 会变慢 */
@@ -101,7 +104,7 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
       if (this.done || this.locked) return;
       const card = this.cards.find(
         (item) =>
-          Math.abs(pointer.x - item.x) <= CARD.w / 2 && Math.abs(pointer.y - item.y) <= CARD.h / 2,
+          Math.abs(pointer.x - item.x) <= this.cardW / 2 && Math.abs(pointer.y - item.y) <= CARD.h / 2,
       );
       if (card) this.chooseCard(card.index);
     };
@@ -135,7 +138,9 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
       if (this.done || this.locked) return;
       const question = currentQuestion(this.state, this.level);
       if (!question) return;
-      const card = this.cards.find((item) => item.index === index);
+      // answer 越界（内容写坏）时取不到卡片：退回第一张继续走，
+      // chooseOption 那边会把越界 answer 当成「怎么点都对」，不会把孩子或 autoplay 卡死
+      const card = this.cards.find((item) => item.index === index) ?? this.cards[0];
       if (!card) return;
 
       const result = chooseOption(this.state, this.level, index);
@@ -151,6 +156,11 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
       this.locked = true;
       this.noteCorrect();
       this.sfx('correct');
+      // 颜色题：把答对的那个颜色名念出来，视力/色觉不同的孩子也有第二条线索
+      if (question.kind === 'color' && !this.autoplay && !this.instant) {
+        const answer = question.options[question.answer];
+        if (answer) this.speak(answer.label);
+      }
       sparkleAt(this, card.x, card.y, THEME.gold, 8);
       if (!this.reducedMotion) {
         this.tweens.killTweensOf(card.node);
@@ -169,13 +179,17 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
         });
       }
 
+      if (result.status === 'done') {
+        // 最后一题答对就立刻落档：原来要等 600ms 的换题延时，那段窗口里退出会白玩一局
+        this.finish();
+        return;
+      }
       const wait = this.instant ? 150 : 600;
       this.stepTimer = window.setTimeout(() => {
         this.stepTimer = null;
         if (this.done) return;
         this.locked = false;
-        if (result.status === 'done') this.finish();
-        else this.renderQuestion();
+        this.renderQuestion();
       }, wait);
     }
 
@@ -183,11 +197,8 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
       if (this.done) return;
       this.done = true;
       this.clearTimers();
-      if (this.autoplay || this.instant) {
-        this.finishTask({ praise: this.ctx.task.done });
-        return;
-      }
-      this.time.delayedCall(220, () => this.finishTask({ praise: this.ctx.task.done }));
+      // 落档优先：完成判定一成立就同步 finishTask（原来非调试模式要等 220ms）
+      this.finishTask({ praise: this.ctx.task.done });
     }
 
     // ---------------- 回合 ----------------
@@ -204,20 +215,29 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
 
     private buildCards(question: LearnRound): void {
       const count = question.options.length;
-      const total = count * CARD.w + (count - 1) * CARD.gap;
+      // 选项最多 4 个：按可用宽度收缩卡片，否则 4×200+3×24=872 > 750，两侧各被裁掉 61px
+      const cardW = Math.min(
+        CARD.w,
+        Math.floor((this.W - CARD.margin * 2 - (count - 1) * CARD.gap) / count),
+      );
+      this.cardW = cardW;
+      const total = count * cardW + (count - 1) * CARD.gap;
       const startX = (this.W - total) / 2;
       const cy = CARD.top + CARD.h / 2;
 
       question.options.forEach((option, index) => {
-        const cx = startX + index * (CARD.w + CARD.gap) + CARD.w / 2;
+        const cx = startX + index * (cardW + CARD.gap) + cardW / 2;
         const node = this.add.container(cx, cy).setDepth(2);
         const g = this.add.graphics();
-        roundRect(g, -CARD.w / 2, -CARD.h / 2, CARD.w, CARD.h, 30, THEME.card, THEME.outline, 6);
-        roundRect(g, -CARD.w / 2 + 14, -CARD.h / 2 + 14, CARD.w - 28, CARD.h - 28, 22, THEME.paper, null, 0);
+        roundRect(g, -cardW / 2, -CARD.h / 2, cardW, CARD.h, 30, THEME.card, THEME.outline, 6);
+        roundRect(g, -cardW / 2 + 14, -CARD.h / 2 + 14, cardW - 28, CARD.h - 28, 22, THEME.paper, null, 0);
         node.add(g);
 
         if (question.kind === 'color') {
-          circle(g, 0, -30, 62, colorOf(option.color, THEME.grey));
+          circle(g, 0, -30, 62, colorOf(option.color, THEME.grey), THEME.outline, 4);
+          // 色盲友好：颜色之外再给一条「花纹」通道 —— 按选项下标取实心 / 圆环 / 十字 / 圆点。
+          // 三个选项的花纹一定互不相同，所以即使分不清红绿也能靠花纹分辨（题面语音还会念颜色名）。
+          this.drawColorPattern(g, 0, -30, 62, index);
           node.add(
             this.add.text(0, 82, option.label, textStyle(34, CSS.ink, true)).setOrigin(0.5),
           );
@@ -237,6 +257,35 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
 
         this.cards.push({ index, node, x: cx, y: cy });
       });
+    }
+
+    /**
+     * 颜色卡片的第二通道花纹：0 实心、1 圆环、2 十字、3 中心圆点。
+     * 只画在圆内（半径 62），不会溢出卡片；用深色描边保证在浅色（黄）和中间色上都能看清。
+     */
+    private drawColorPattern(
+      g: Phaser.GameObjects.Graphics,
+      cx: number,
+      cy: number,
+      radius: number,
+      index: number,
+    ): void {
+      const ink = THEME.outline;
+      const pattern = index % 4;
+      if (pattern === 0) return;
+      if (pattern === 1) {
+        g.lineStyle(8, ink, 0.85);
+        g.strokeCircle(cx, cy, radius * 0.55);
+        return;
+      }
+      if (pattern === 2) {
+        g.lineStyle(8, ink, 0.85);
+        g.lineBetween(cx - radius * 0.62, cy, cx + radius * 0.62, cy);
+        g.lineBetween(cx, cy - radius * 0.62, cx, cy + radius * 0.62);
+        return;
+      }
+      g.fillStyle(ink, 0.85);
+      g.fillCircle(cx, cy, radius * 0.3);
     }
 
     private shakeCard(card: OptionCard): void {
@@ -267,7 +316,8 @@ export function createLearnScene(ctx: GameContext, level: LearnLevel): Phaser.Ty
 
     private drawClassroom(): void {
       const bg = this.add.graphics().setDepth(0);
-      drawRoom(bg, 'classroom', this.W, this.H);
+      // 房间来自关卡脚本（schema 的 room 是 ROOMS 枚举），不要在这里写死
+      drawRoom(bg, this.level.room, this.W, this.H);
       drawRug(bg, PANDA.x, 858, 300, 100, THEME.bambooLight);
     }
 

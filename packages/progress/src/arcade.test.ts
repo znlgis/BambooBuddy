@@ -42,9 +42,9 @@ function task(id: TaskSummary['id']): TaskSummary {
 function memoryStore(initial: SaveData | null = null): ProgressStore & { current: SaveData | null } {
   const store = {
     current: initial,
+    // current === null = 还没存过档 → 空档（真实 store 对空档是 resolve，不是 reject）
     async load(): Promise<SaveData> {
-      if (!store.current) throw new Error('empty');
-      return store.current;
+      return store.current ?? emptySave(T0);
     },
     async save(data: SaveData): Promise<void> {
       store.current = data;
@@ -403,5 +403,33 @@ describe('隐藏小游戏：存档迁移与兜底', () => {
     expect(lower.arcade.popstar.best).toBe(30);
     expect(lower.arcade.popstar.plays).toBe(2);
     expect(lower.days[TODAY]!.arcadePlays).toBe(2);
+  });
+});
+describe('分数是不可信输入：NaN/Infinity 不能污染最高分', () => {
+  it('withArcadePlay 对 NaN / Infinity / 负数 都夹成合法整数', () => {
+    const save = emptySave(T0);
+    const nan = withArcadePlay(save, 'popstar', Number.NaN, T0);
+    expect(nan.arcade.popstar.best).toBe(0);
+    expect(Number.isFinite(nan.arcade.popstar.best)).toBe(true);
+
+    const infinity = withArcadePlay(nan, 'popstar', Number.POSITIVE_INFINITY, T0);
+    expect(infinity.arcade.popstar.best).toBe(0);
+    expect(infinity.arcade.popstar.plays).toBe(2);
+
+    const negative = withArcadePlay(infinity, 'popstar', -5, T0);
+    expect(negative.arcade.popstar.best).toBe(0);
+  });
+
+  it('playArcade(NaN) 不会把已有最高分抹掉（重启后也还在）', async () => {
+    const manager = await unlockedManager();
+    expect((await manager.playArcade('popstar', 42)).ok).toBe(true);
+    const nan = await manager.playArcade('popstar', Number.NaN);
+    expect(nan.ok).toBe(true);
+    expect(nan.best).toBe(42);
+    expect(Number.isFinite(manager.snapshot().arcade.popstar.best)).toBe(true);
+
+    // 重新读档（走 sanitize）后最高分不能被 NaN 兜底成 0
+    const reloaded = migrate(manager.snapshot(), T0);
+    expect(reloaded.arcade.popstar.best).toBe(42);
   });
 });

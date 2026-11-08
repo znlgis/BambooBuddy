@@ -220,8 +220,10 @@ jobs:
           fi
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          # 注意：默认 shell 带 -e。glob 不匹配时 "[ ... ] && ..." 整体返回 1 会让整个步骤失败，
+          # 而且报错与"找不到 SDK"毫无关系，极难查。所以这里用 if 语句。
           for dir in "$SDK"/cmdline-tools/*/bin; do
-            [ -d "$dir" ] && echo "$dir" >> "$GITHUB_PATH"
+            if [ -d "$dir" ]; then echo "$dir" >> "$GITHUB_PATH"; fi
           done
 
       - name: 安装 Android SDK 组件

@@ -8,7 +8,10 @@ export { TASK_IDS };
 export type { TaskId };
 
 /**
- * 四份 Playwright 配置的共同基线（dev / preview；以后要加 shots、audit 也只 import 这里）。
+ * Playwright 配置的共同基线（当前 dev / preview 两份；以后要加 shots、audit 也只 import 这里）。
+ *
+ * 注意：preview 配置**没有**展开 baseline —— 它只有 2 条用例、只需要 baseURL 与 trace，
+ * 因此截图与 expect 超时不跟这边走。要加新的证据要求时，两处一起改。
  *
  * 为什么是"共享基线"而不是每份配置各写一份：以前 CHAGS 的 shots/audit 各抄一份，
  * 结果 audit 没截图没轨迹、expect.timeout 漏了 —— 出事时最难查的那两份恰好没有证据。
@@ -39,7 +42,11 @@ export const baseline = {
   fullyParallel: false,
   workers: 1,
   expect: { timeout: 20_000 },
-  reporter: [['list']] as const,
+  // 本地只要 list（终端里读得清）；CI 额外产出 html 报告，失败时 upload-artifact 才有内容可传。
+  // 之前 CI 也在传 playwright-report/，但 reporter 只有 list —— 那个目录从来不存在，等于没证据。
+  reporter: (process.env.CI
+    ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
+    : [['list']]) as PlaywrightTestConfig['reporter'],
   use: {
     baseURL: devBaseURL,
     trace: 'retain-on-failure',
@@ -276,15 +283,22 @@ export async function readShoots(page: Page): Promise<number> {
 export const readMuted = (page: Page): Promise<string | null> =>
   page.evaluate(() => window.localStorage.getItem('bamboo.muted'));
 
-/** 清掉本地存档与静音开关：用例开始前需要"全新孩子"时用 */
+/**
+ * 清掉本地存档与静音开关：用例开始前需要"全新孩子"时用。
+ *
+ * onblocked 不能当成功：页面自己还开着连接时删除根本不会发生，
+ * 函数却静默返回，下一条用例就会读到上一轮的存档（假绿/假红都难查）。
+ * 这里改成：阻塞就 reject 并给出人话，让用例显式失败。
+ */
 export async function resetLocalState(page: Page): Promise<void> {
   await page.evaluate(async () => {
     window.localStorage.clear();
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       const request = indexedDB.deleteDatabase('bamboobuddy');
       request.onsuccess = () => resolve();
-      request.onerror = () => resolve();
-      request.onblocked = () => resolve();
+      request.onerror = () => reject(new Error('indexedDB.deleteDatabase 失败：' + (request.error?.message ?? '未知原因')));
+      request.onblocked = () =>
+        reject(new Error('indexedDB.deleteDatabase 被占用（页面仍开着连接）：先关闭连接再清档'));
     });
   });
 }

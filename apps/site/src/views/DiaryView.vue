@@ -3,7 +3,7 @@ import { getTaskSummary, taskSummaries } from '@bamboo/content';
 import type { TaskSummary, TaskId } from '@bamboo/content';
 import { dayKey } from '@bamboo/progress';
 import { arcadeInfo } from '../arcade/catalog';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { dayKind, stickerRows } from '../logic/diary';
 import type { StickerRow } from '../logic/diary';
 import { navigate } from '../router';
@@ -45,20 +45,48 @@ const selectedRow = computed<StickerRow | null>(
   () => stickers.value.find((row) => row.taskId === selected.value) ?? null,
 );
 const speaking = ref(false);
+/** 每次朗读的号码：旧朗读迟到的 done 不能把新一次的状态清掉 */
+let speechToken = 0;
+
+function stopSpeaking(): void {
+  speechToken += 1;
+  speaking.value = false;
+  platform.audio.stopSpeech();
+}
 
 function playDiary(): void {
+  // 朗读中再点是"停止"：4–8 岁的孩子分不清"再点一次会重来"还是"会停"，
+  // 与其让它越念越长，不如让同一个按钮永远做当前这件事。
+  if (speaking.value) {
+    stopSpeaking();
+    return;
+  }
   if (settings.muted) return;
   const lines = todayLines.value.map((task) => task.diary);
   if (lines.length === 0) return;
   const handle = platform.audio.speak(lines.join(' '), locale.current);
+  const token = ++speechToken;
   speaking.value = true;
   void handle.done.then(() => {
-    speaking.value = false;
+    if (token === speechToken) speaking.value = false;
   });
 }
 
+/* 静音开关是"立即生效"的（docs 承诺静音立即停语音）：这里同步收起按钮状态 */
+watch(
+  () => settings.muted,
+  (muted) => {
+    if (muted) stopSpeaking();
+  },
+);
+
+onBeforeUnmount(() => {
+  // 离开日记页时还在念 = 回到小屋继续有人说话；这里和游戏宿主保持同一纪律
+  stopSpeaking();
+});
+
 function dayLabel(date: string): string {
-  const kind = dayKind(date, dayKey(platform.now()));
+  const kind = dayKind(date, dayKey(progress.now));
   if (kind === 'today') return t('diary.today');
   if (kind === 'yesterday') return t('diary.yesterday');
   return date.slice(5).replace('-', '/');
@@ -77,14 +105,16 @@ function stickerHint(row: StickerRow): string {
     <section data-testid="diary-today" class="mt-4 rounded-3xl border-2 border-cream bg-card p-4">
       <div class="flex items-center justify-between gap-2">
         <h2 class="text-lg font-bold text-bamboo-deep">{{ t('diary.today') }}</h2>
+        <!-- 朗读中同一个按钮变成"停止"：没有单独的停止文案键，用 ⏹ + aria-pressed 表达状态 -->
         <button
           type="button"
           data-testid="diary-play"
           class="flex min-h-12 items-center gap-1 rounded-full bg-bamboo-deep px-4 py-2 text-base font-bold text-white active:scale-95"
+          :aria-pressed="speaking"
           @click="playDiary"
         >
-          <span aria-hidden="true">🔊</span>
-          <span>{{ speaking ? t('game.listen') : t('diary.voice') }}</span>
+          <span aria-hidden="true">{{ speaking ? '⏹' : '🔊' }}</span>
+          <span>{{ t('diary.voice') }}</span>
         </button>
       </div>
 

@@ -84,10 +84,9 @@ export const COMPLETE_LAYOUT = {
   replay: { x: 225, y: 1093 },
 } as const;
 
-export const UI = {
-  headerH: 140,
-  hintY: 260,
-  buttonH: 112,
-  /** 可点区域下限（88 逻辑像素 ≈ 44 CSS px 的两倍） */
-  minTap: 96,
-} as const;
+/*
+ * 这里原来还有一个 UI 常量（headerH / hintY / buttonH / minTap），全仓库没有任何引用：
+ * 场景的按钮尺寸各自写在 addButton(...) 的参数里，可点区域下限由 phaser-kit 的
+ * addButton / setContainerHitArea 直接保证。留着一个「改了也不生效」的常量只会误导后来人，
+ * 所以删掉；「可点区域 ≥ 96 逻辑像素」这条原则仍在 README 与设计文档里。
+ */

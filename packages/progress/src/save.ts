@@ -12,7 +12,7 @@ import { STAT_KEYS, TASK_IDS } from '@bamboo/content/ids';
 import type { StatKey, TaskId } from '@bamboo/content/ids';
 import { CATALOG, defaultEquipment, findItem } from './catalog';
 import { dayKey } from './day';
-import { clampStat, normalizeStats } from './stats';
+import { normalizeStats } from './stats';
 
 type Raw = Record<string, unknown>;
 
@@ -152,11 +152,30 @@ export function emptySave(now: number): SaveData {
   };
 }
 
-/** 只留最近 30 天：日期键是 YYYY-MM-DD，字典序就是时间序 */
-export function pruneDays(days: Record<string, DayRecord>, keep = MAX_DAYS): Record<string, DayRecord> {
-  const keys = Object.keys(days).sort().reverse().slice(0, keep);
+/**
+ * 只留最近 30 天：日期键是 YYYY-MM-DD，字典序就是时间序。
+ *
+ * 给定 today 时**永远保留今天与未来日期**：设备时钟异常/被调快过时，存档里可能有一批
+ * 晚于"今天"的日期键，纯按字典序截断会把今天裁掉；而日记录是任务、日记、家长页的共同
+ * 来源，今天被裁掉会让当天所有写操作拿到 undefined（历史上曾因此抛过 TypeError）。
+ */
+export function pruneDays(
+  days: Record<string, DayRecord>,
+  keep = MAX_DAYS,
+  today?: string,
+): Record<string, DayRecord> {
+  const keys = Object.keys(days).sort();
+  const limit = Math.max(0, Math.floor(keep));
+  const past = today === undefined ? keys : keys.filter((key) => key <= today);
+  const future = today === undefined ? [] : keys.filter((key) => key > today);
+  // 未来键也要限额：坏档里可能塞进成百上千个未来的合法日期串，不能无上限保留
+  const keptFuture = future.slice(Math.max(0, future.length - limit));
+  const kept = past
+    .slice(Math.max(0, past.length - limit))
+    .concat(keptFuture)
+    .sort();
   const out: Record<string, DayRecord> = {};
-  for (const key of keys.reverse()) {
+  for (const key of kept) {
     const day = days[key];
     if (day) out[key] = day;
   }
@@ -211,7 +230,10 @@ function sanitizePet(value: unknown, now: number): PetState {
   }
 
   return {
-    name: typeof value.name === 'string' && value.name.trim().length > 0 ? value.name.trim() : base.name,
+    name:
+      typeof value.name === 'string' && value.name.trim().length > 0
+        ? value.name.trim().slice(0, 24)
+        : base.name,
     xp: positiveInt(value.xp),
     stats: sanitizeStats(value.stats),
     lastDecayDay:
@@ -299,7 +321,7 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
       arcadeSecret: raw.arcadeSecret === true,
     };
   }
-  return pruneDays(days);
+  return days;
 }
 
 /**
@@ -315,11 +337,36 @@ const MIGRATIONS: Record<number, (raw: Raw, now: number) => Raw> = {
   3: (raw) => raw,
 };
 
-/** 读档体检：坏字段只丢那一个，不连累整份存档；来自未来版本的存档才整体清空 */
+/**
+ * 来自未来版本的存档不被静默擦掉，而是"打标"交给外层决定。
+ *
+ * 这里不能用错误或额外字段：IndexedDB 存档由 platform 层调用 migrate 解出来，
+ * 若 migrate 抛错，platform 的兜底会把它变成空档（本包管不到 platform），
+ * 所以用一个模块内 WeakSet 记住"这份空档是未来版本降级出来的"，
+ * ProgressManager 看到标记就拒绝写入、把原始存档原封不动留在 IndexedDB 里。
+ * WeakSet 不参与序列化，也不会污染 SaveData 的类型。
+ */
+const FUTURE_VERSION_SAVES = new WeakSet<object>();
+
+/** 这份存档是否来自比当前代码更新的版本（可能是 migrate 降级出来的空档，也可能是原始 raw） */
+export function isFutureVersionSave(value: unknown): boolean {
+  if (typeof value === 'object' && value !== null && FUTURE_VERSION_SAVES.has(value)) return true;
+  return (
+    isRecord(value) &&
+    typeof value.schemaVersion === 'number' &&
+    value.schemaVersion > SAVE_SCHEMA_VERSION
+  );
+}
+
+/** 读档体检：坏字段只丢那一个，不连累整份存档；来自未来版本的存档整份作废但会打标 */
 export function migrate(raw: unknown, now: number): SaveData {
   if (!isRecord(raw)) return emptySave(now);
   const version = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 0;
-  if (version > SAVE_SCHEMA_VERSION) return emptySave(now);
+  if (version > SAVE_SCHEMA_VERSION) {
+    const empty = emptySave(now);
+    FUTURE_VERSION_SAVES.add(empty);
+    return empty;
+  }
 
   let data: Raw = raw;
   for (let from = version; from < SAVE_SCHEMA_VERSION; from += 1) {
@@ -342,7 +389,9 @@ export function migrate(raw: unknown, now: number): SaveData {
     pet,
     tasks,
     arcade,
-    days: pruneDays(days),
+    // 这一次裁剪必须带上 today：否则"今天比存档里 30 个日期键都旧"（时钟被调快过）
+    // 会把刚补上的今天又裁掉，导致当天所有日记录写操作拿到 undefined
+    days: pruneDays(days, MAX_DAYS, today),
   };
 }
 
@@ -350,10 +399,8 @@ export function migrate(raw: unknown, now: number): SaveData {
 export function ensureDay(save: SaveData, now: number): SaveData {
   const today = dayKey(now);
   if (save.days[today]) return save;
-  return { ...save, days: pruneDays({ ...save.days, [today]: emptyDay(today) }) };
-}
-
-/** 校验并修正一个状态值（测试与 UI 都可复用） */
-export function sanitizeStatValue(value: number): number {
-  return clampStat(value);
+  return {
+    ...save,
+    days: pruneDays({ ...save.days, [today]: emptyDay(today) }, MAX_DAYS, today),
+  };
 }

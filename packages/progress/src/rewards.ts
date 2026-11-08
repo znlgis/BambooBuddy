@@ -1,7 +1,7 @@
 import type { TaskSummary } from '@bamboo/content';
 import type { StatKey } from '@bamboo/content/ids';
 import type { Stars } from '@bamboo/game-kit';
-import { dayKey, yesterdayOf } from './day';
+import { yesterdayOf } from './day';
 
 /**
  * 星星是"这一局玩得怎么样"的正向反馈，不是评分羞辱：
@@ -64,9 +64,4 @@ export function nextStreak(
 /** 连续 3 天（以及之后的 6/9…天）完成同一件事，得到一张贴纸；每个任务只有一张 */
 export function earnsSticker(streak: number, alreadyOwned: boolean): boolean {
   return !alreadyOwned && streak > 0 && streak % 3 === 0;
-}
-
-/** 今日是否已经完成（日记录里的 completed 去重） */
-export function completedToday(saveDay: { date: string; completed: readonly string[] }, now: number): boolean {
-  return saveDay.date === dayKey(now) && saveDay.completed.length > 0;
 }

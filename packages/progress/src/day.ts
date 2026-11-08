@@ -30,7 +30,13 @@ function dayKeyToUtc(key: string): number | null {
   const month = Number(match[2]);
   const day = Number(match[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return Date.UTC(year, month - 1, day);
+  const utc = Date.UTC(year, month - 1, day);
+  // Date.UTC 会把 2026-02-31 归一化成 3 月 3 日：反查一遍，非法日历日一律当坏键
+  const date = new Date(utc);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return utc;
 }
 
 /** to − from 的整天数；任一日期非法返回 0（坏存档按"没有跨天"处理） */
@@ -50,13 +56,4 @@ export function addDays(key: string, delta: number): string {
 
 export function yesterdayOf(key: string): string {
   return addDays(key, -1);
-}
-
-/** 由旧到新的一串日期（含首尾） */
-export function dayRange(from: string, to: string): string[] {
-  const span = daysBetween(from, to);
-  if (span < 0) return [];
-  const out: string[] = [];
-  for (let i = 0; i <= span; i += 1) out.push(addDays(from, i));
-  return out;
 }

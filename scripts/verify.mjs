@@ -3,10 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * 提交前门禁：typecheck / lint / test / content:check / build 并行跑，
+ * 提交前门禁：typecheck / lint / test / content:check / pack:check / build 并行跑，
  * 最后串行跑 size（它读 dist，必须等 build 结束）。
  *
- * 为什么并行：这五步之间没有任何依赖，串起来只是白等（CHAGS 实测 65.8s → 35s）。
+ * 为什么并行：这六步之间没有任何依赖，串起来只是白等（CHAGS 实测 65.8s → 35s）。
  * 但"提交前必须全绿"这条纪律一点没松：任一步失败，整体非 0。
  *
  * 为什么最后串行 size：体积断言的对象是构建产物，和 build 并行只会读到上一轮的 dist，
@@ -30,16 +30,41 @@ const RESET = '\u001b[0m';
 
 const started = Date.now();
 
+/**
+ * 跑一步。
+ *
+ * 两个细节：
+ * - 耗时记**本步**自己的（以前记的是"进程启动到本步结束"，五步全显示成同一个累计值）；
+ * - spawn 本身可能同步抛错（Windows 受限环境常见 EPERM，POSIX 上是 EACCES/ENOENT），
+ *   必须 catch 成"这一步失败"，否则整个 Promise.all 直接 reject、全部日志丢光。
+ */
 function run(name, command, color) {
   return new Promise((resolvePromise) => {
-    const child = spawn(command, {
-      cwd: ROOT,
-      shell: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
-    });
+    const stepStart = Date.now();
     const prefix = color + '[' + name + ']' + RESET + ' ';
+    let settled = false;
+    const finish = (code, message) => {
+      if (settled) return;
+      settled = true;
+      if (message !== undefined) console.error(prefix + message);
+      resolvePromise({ name, code, ms: Date.now() - stepStart });
+    };
+
+    let child;
+    try {
+      child = spawn(command, {
+        cwd: ROOT,
+        shell: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: process.env,
+      });
+    } catch (error) {
+      finish(1, '无法启动：' + error.message);
+      return;
+    }
+
     const pipe = (stream, out) => {
+      if (!stream) return;
       let buffer = '';
       stream.on('data', (chunk) => {
         buffer += chunk.toString();
@@ -53,11 +78,8 @@ function run(name, command, color) {
     };
     pipe(child.stdout, process.stdout);
     pipe(child.stderr, process.stderr);
-    child.on('error', (error) => {
-      console.error(prefix + '无法启动：' + error.message);
-      resolvePromise({ name, code: 1, ms: 0 });
-    });
-    child.on('close', (code) => resolvePromise({ name, code: code ?? 1, ms: Date.now() - started }));
+    child.on('error', (error) => finish(1, '无法启动：' + error.message));
+    child.on('close', (code) => finish(code ?? 1));
   });
 }
 
@@ -84,4 +106,9 @@ if (size.code !== 0) {
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
 console.log('\n✅ 全部门禁通过（' + seconds + 's）');
-console.log('   ' + results.map((result) => result.name + ' ' + ((result.ms - 0) / 1000).toFixed(1) + 's').join(' · '));
+console.log(
+  '   ' +
+    [...results, size]
+      .map((result) => result.name + ' ' + (result.ms / 1000).toFixed(1) + 's')
+      .join(' · '),
+);

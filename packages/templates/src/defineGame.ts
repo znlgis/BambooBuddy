@@ -1,6 +1,6 @@
 import type { GameContext, GameManifest, GameModule } from '@bamboo/game-kit';
-import { createPhaserGame } from '@bamboo/phaser-kit';
 import type Phaser from 'phaser';
+import { createGameLifecycle } from './lifecycle';
 
 export interface GameDefinition {
   manifest: GameManifest;
@@ -16,26 +16,25 @@ export interface GameDefinition {
  * 十个玩法共用这一段，游戏包只剩下"这一关数据怎么交给模板"。
  */
 export function defineGame(definition: GameDefinition): GameModule {
-  let game: Phaser.Game | null = null;
+  const lifecycle = createGameLifecycle();
 
   return {
     manifest: definition.manifest,
 
     async mount(ctx: GameContext): Promise<void> {
-      game = createPhaserGame(ctx, { scenes: definition.scenes(ctx) });
+      await lifecycle.mount(ctx, definition.scenes(ctx));
     },
 
-    async unmount(): Promise<void> {
-      game?.destroy(true);
-      game = null;
+    unmount(): Promise<void> {
+      return lifecycle.unmount();
     },
 
     pause(): void {
-      game?.loop.sleep();
+      lifecycle.pause();
     },
 
     resume(): void {
-      game?.loop.wake();
+      lifecycle.resume();
     },
   };
 }

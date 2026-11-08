@@ -215,12 +215,20 @@ class TetrisScene extends ArcadeScene {
         guard += 1;
         if (this.state === before) break;
       }
+      if (this.state.active.rotation !== placement.rotation) {
+        // AI 规划的旋转到不了（被墙/堆料挡住）：落点会偏，autoplay 仍能走完，
+        // 但「AI 已经失败」这件事必须在调试出口里留痕，否则只能靠 e2e 超时才发现回归
+        console.warn('[bamboo] tetris autoplay 无法转到目标朝向', placement.rotation);
+      }
       guard = 0;
       while (this.state.active.x !== placement.x && guard < TETRIS_COLS + 4) {
         const before = this.state;
         this.handleMove(this.state.active.x < placement.x ? 1 : -1);
         guard += 1;
         if (this.state === before) break;
+      }
+      if (this.state.active.x !== placement.x) {
+        console.warn('[bamboo] tetris autoplay 无法平移到目标列', placement.x);
       }
     }
 

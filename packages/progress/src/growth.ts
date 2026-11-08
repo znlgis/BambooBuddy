@@ -21,8 +21,13 @@ export const STAGES: readonly GrowthStage[] = [
   { id: 4, name: '竹竹的小屋', nameEn: "Bamboo's Home", atXp: 300, scale: 1.08 },
 ];
 
+/** 成长值的唯一入口：NaN / 负数 / Infinity 都当 0，避免 UI 上出现「等级 NaN」 */
+function safeXp(xp: number): number {
+  return Number.isFinite(xp) ? Math.max(0, xp) : 0;
+}
+
 export function stageForXp(xp: number): GrowthStage {
-  const safe = Number.isFinite(xp) ? Math.max(0, xp) : 0;
+  const safe = safeXp(xp);
   let stage = STAGES[0]!;
   for (const candidate of STAGES) {
     if (safe >= candidate.atXp) stage = candidate;
@@ -40,10 +45,10 @@ export function nextStageForXp(xp: number): GrowthStage | null {
 export function xpToNextStage(xp: number): number {
   const next = nextStageForXp(xp);
   if (next === null) return 0;
-  return Math.max(0, next.atXp - Math.max(0, xp));
+  return Math.max(0, next.atXp - safeXp(xp));
 }
 
 /** 等级只用于展示（每个阶段内部还是有小步子的成长感） */
 export function levelForXp(xp: number): number {
-  return 1 + Math.floor(Math.max(0, xp) / 20);
+  return 1 + Math.floor(safeXp(xp) / 20);
 }

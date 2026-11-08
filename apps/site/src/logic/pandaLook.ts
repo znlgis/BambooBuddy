@@ -1,6 +1,6 @@
 import type { Stats } from '@bamboo/game-kit';
 
-export type PandaMood = 'happy' | 'sleepy' | 'hungry' | 'dirty' | 'sad' | 'neutral';
+export type PandaMood = 'happy' | 'sleepy' | 'hungry' | 'dirty' | 'sad';
 
 export interface PandaFace {
   eyes: 'open' | 'closed';
@@ -24,12 +24,14 @@ export const PANDA_COLORS = {
 /**
  * 状态 → 表情。只按最需要被照顾的那一项给一个温柔表情，
  * 不做"哪项最低就报错"的叠加（孩子一次只需要读懂一种情绪）。
+ * 健康是五项之一，也要有对应的表情：一直不动会蔫下来（用"难过"这张最轻的脸）。
  */
 export function moodFromStats(stats: Stats): PandaMood {
   if (stats.energy < 40) return 'sleepy';
   if (stats.fullness < 40) return 'hungry';
   if (stats.clean < 40) return 'dirty';
   if (stats.mood < 40) return 'sad';
+  if (stats.health < 40) return 'sad';
   return 'happy';
 }
 
@@ -43,8 +45,6 @@ export function faceFor(mood: PandaMood): PandaFace {
       return { eyes: 'open', mouth: 'flat', tear: false, dirt: true, sleepy: false };
     case 'sad':
       return { eyes: 'open', mouth: 'frown', tear: true, dirt: false, sleepy: false };
-    case 'neutral':
-      return { eyes: 'open', mouth: 'flat', tear: false, dirt: false, sleepy: false };
     default:
       return { eyes: 'open', mouth: 'smile', tear: false, dirt: false, sleepy: false };
   }

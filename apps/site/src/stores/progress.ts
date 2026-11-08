@@ -25,13 +25,38 @@ import type {
   UnlockOutcome,
 } from '@bamboo/progress';
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, onScopeDispose, ref } from 'vue';
 import { setDebugSave } from '../shell/debug';
 import { platform } from '../shell/platform';
 import { progressManager } from '../shell/progress';
 
 /** 20 分钟：一天里玩到这么久就提醒孩子看看远处（一天只提醒一次） */
 export const REST_SECONDS = 20 * 60;
+
+/** 响应式时钟的心跳：1 分钟。跨天、问候语、今日推荐都靠它自己过期，不用用户刷新 */
+const CLOCK_TICK_MS = 60_000;
+
+/**
+ * 一个会自己走的时间源。
+ *
+ * 之前 todayRecord / weekSummary / restDue / careAvailable 都在 computed 里调
+ * platform.now()，但 platform.now 不是响应式的：平板插着电挂一夜，第二天打开还是
+ * 「晚上好」、昨天的完成勾与推荐批次。这里用每分钟一次（外加切回前台）的 ref 驱动，
+ * 派生数据就会自己过期。
+ */
+function useNow() {
+  const now = ref(platform.now());
+  const tick = (): void => {
+    now.value = platform.now();
+  };
+  const timer = setInterval(tick, CLOCK_TICK_MS);
+  const offResume = platform.lifecycle.onResume(tick);
+  onScopeDispose(() => {
+    clearInterval(timer);
+    offResume();
+  });
+  return { now, tick };
+}
 
 /**
  * 界面唯一的存档读取口。
@@ -72,9 +97,17 @@ export const useProgress = defineStore('progress', () => {
     return inflight;
   }
 
-  /** 所有写操作的统一出口：失败可见，成功后同步快照 */
+  /**
+   * 所有写操作的统一出口：失败可见，成功后同步快照。
+   *
+   * **必须先 await init()**：App 挂载时只是 `void progress.init()`，界面在 IndexedDB
+   * 读档完成前就能点。如果这期间直接写，Manager 会以 emptySave 为底算出新档并落盘，
+   * 把真正的旧档覆盖掉 —— 界面看不出异常，下次刷新才发现进度没了。
+   * init() 是 single-flight 的，已经读完时这里只是等一个已 resolve 的 Promise。
+   */
   async function run<T>(action: () => Promise<T>): Promise<T | null> {
     try {
+      await init();
       const result = await action();
       unsaved.value = false;
       return result;
@@ -138,26 +171,28 @@ export const useProgress = defineStore('progress', () => {
 
   /* ------------------------------- 派生数据 ------------------------------- */
 
+  const { now } = useNow();
+
   const pet = computed(() => save.value.pet);
   const stage = computed(() => stageForXp(save.value.pet.xp));
   const nextStage = computed(() => nextStageForXp(save.value.pet.xp));
   const xpToNext = computed(() => xpToNextStage(save.value.pet.xp));
-  const todayRecord = computed(() => readTodayRecord(save.value, platform.now()));
-  const weekSummary = computed(() => readWeekSummary(save.value, platform.now()));
+  const todayRecord = computed(() => readTodayRecord(save.value, now.value));
+  const weekSummary = computed(() => readWeekSummary(save.value, now.value));
   const todaySeconds = computed(() => todayRecord.value.seconds);
   const restDue = computed(
     () => todaySeconds.value >= REST_SECONDS && !todayRecord.value.restDismissed,
   );
 
   /** 今天的小门：解锁了没有、今天玩了几局、还剩几局（界面与 e2e 都从这里读） */
-  const arcadeStatus = computed(() => readArcadeStatus(save.value, platform.now()));
+  const arcadeStatus = computed(() => readArcadeStatus(save.value, now.value));
   const arcadeUnlocked = computed(() => arcadeStatus.value.unlocked);
   /** 今天触发了隐藏彩蛋：三款无限畅玩、不限局数 */
   const arcadeUnlimited = computed(() => arcadeStatus.value.unlimited);
 
   /** 今天每个亲昵动作还能不能做（小屋按钮据此禁用并标注"今天已经做过啦"） */
   const careAvailable = computed<Record<CareAction, boolean>>(() => {
-    const today = dayKey(platform.now());
+    const today = dayKey(now.value);
     return {
       pat: isCareAvailable(save.value.pet.careDays, 'pat', today),
       hug: isCareAvailable(save.value.pet.careDays, 'hug', today),
@@ -183,7 +218,7 @@ export const useProgress = defineStore('progress', () => {
 
   /** 这一款今天还能不能开局（判定只有一份：progress 的 arcadeAvailable，含隐藏彩蛋的无限畅玩） */
   function arcadeAvailable(gameId: ArcadeGameId): boolean {
-    return isArcadeAvailable(save.value, gameId, platform.now());
+    return isArcadeAvailable(save.value, gameId, now.value);
   }
 
   function arcadeBest(gameId: ArcadeGameId): number {
@@ -235,6 +270,8 @@ export const useProgress = defineStore('progress', () => {
     stage,
     nextStage,
     xpToNext,
+    /** 响应式"现在"（每分钟与切回前台各走一次）：视图里的时间派生都该用它，而不是 platform.now() */
+    now,
     todayRecord,
     weekSummary,
     todaySeconds,

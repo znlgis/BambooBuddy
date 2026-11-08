@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { navigate, useRoute } from './router';
+import { grantParentUnlock, navigate, revokeParentUnlock, useRoute } from './router';
 import { installBackButtonHandler } from './shell/backButton';
 import { platform } from './shell/platform';
 import { useI18n } from './shell/useI18n';
 import { useProgress } from './stores/progress';
 import { useSettings } from './stores/settings';
-import DressView from './views/DressView.vue';
 import HomeView from './views/HomeView.vue';
 import TasksView from './views/TasksView.vue';
 
@@ -18,6 +17,8 @@ import TasksView from './views/TasksView.vue';
 const PlayView = defineAsyncComponent(() => import('./views/PlayView.vue'));
 const ParentView = defineAsyncComponent(() => import('./views/ParentView.vue'));
 const DiaryView = defineAsyncComponent(() => import('./views/DiaryView.vue'));
+// 装扮页也是"点开才看"：它不在首屏可视区，挪出首屏预算（首屏 gzip 已贴着 60 KB 上限）
+const DressView = defineAsyncComponent(() => import('./views/DressView.vue'));
 // 隐藏小游戏：游戏厅与小游戏宿主都按需加载（小游戏 chunk 里才有 Phaser 场景）
 const ArcadeView = defineAsyncComponent(() => import('./views/ArcadeView.vue'));
 const ArcadePlayView = defineAsyncComponent(() => import('./views/ArcadePlayView.vue'));
@@ -40,9 +41,15 @@ const isFullScreen = computed(
  * 从滚到一半的小屋点"任务"，新页面如果保持旧 scrollTop，会直接停在半张卡片上。
  */
 const mainRef = ref<HTMLElement | null>(null);
+let previousRouteName = route.value.name;
 watch(
   () => route.value.name + ':' + (route.value.taskId ?? ''),
   () => {
+    // 离开家长页就吊销令牌：浏览器后退键再回来时没有令牌，回落小屋
+    if (previousRouteName === 'parent' && route.value.name !== 'parent') {
+      revokeParentUnlock();
+    }
+    previousRouteName = route.value.name;
     void nextTick(() => {
       mainRef.value?.scrollTo({ top: 0 });
     });
@@ -52,14 +59,18 @@ watch(
 /* ---------------- 家长页入口：长按标题 3 秒（孩子不会无意点进来） ---------------- */
 
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
-let holdFired = false;
+/** 长按真正生效的时刻：只用来吃掉紧随其后的那一次 click */
+let holdFiredAt = 0;
+/** 长按后浏览器补的 click 通常在同一帧/下一帧内；给足余量但别吃掉下一次正常点击 */
+const HOLD_CLICK_WINDOW_MS = 800;
 
 function startParentHold(): void {
   if (holdTimer !== null) return;
-  holdFired = false;
   holdTimer = setTimeout(() => {
     holdTimer = null;
-    holdFired = true;
+    holdFiredAt = platform.now();
+    // 家长页要一次性令牌：没有它，#/parent 直接输地址或浏览器后退都进不去
+    grantParentUnlock(platform.now());
     navigate('/parent');
   }, 3000);
 }
@@ -72,10 +83,11 @@ function cancelParentHold(): void {
 
 /** 长按结束后浏览器还会补一次 click：那一次不能再把小屋盖过去 */
 function onTitleClick(): void {
-  if (holdFired) {
-    holdFired = false;
+  if (holdFiredAt !== 0 && platform.now() - holdFiredAt < HOLD_CLICK_WINDOW_MS) {
+    holdFiredAt = 0;
     return;
   }
+  holdFiredAt = 0;
   navigate('/');
 }
 
@@ -153,6 +165,7 @@ function navClass(active: boolean): string {
           data-testid="nav-sound"
           class="flex min-h-12 min-w-12 items-center justify-center rounded-full bg-card px-3 text-2xl active:scale-95"
           :aria-label="settings.muted ? t('sound.off') : t('sound.on')"
+          :aria-pressed="!settings.muted"
           @click="settings.toggle()"
         >
           {{ settings.muted ? '🔇' : '🔊' }}

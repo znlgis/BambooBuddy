@@ -6,7 +6,6 @@ import { SLOT_LABEL_KEYS } from '../logic/labels';
 import { groupTasksBySlot } from '../logic/taskGroups';
 import { navigate } from '../router';
 import { computed } from 'vue';
-import { platform } from '../shell/platform';
 import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 
@@ -23,9 +22,10 @@ const { t, locale } = useI18n();
 
 const tasks = computed(() => taskSummaries(locale.current));
 
-const dateKey = dayKey(platform.now());
-const slot = currentSlot(platform.now());
-const recommended = computed(() => recommendedTasks(dateKey, slot, tasks.value, 4));
+/** 时间从 progress.now 派生（每分钟刷新）：平板挂一夜也不会停在昨天的推荐批次 */
+const dateKey = computed(() => dayKey(progress.now));
+const slot = computed(() => currentSlot(progress.now));
+const recommended = computed(() => recommendedTasks(dateKey.value, slot.value, tasks.value, 4));
 const groups = computed(() => groupTasksBySlot(tasks.value));
 
 function locked(unlockLevel: number): boolean {
@@ -53,14 +53,17 @@ function starText(taskId: TaskId): string {
       <h2 class="text-lg font-bold text-ink">{{ t('tasks.today') }}</h2>
       <ul class="mt-2 grid grid-cols-2 gap-2">
         <li v-for="task in recommended" :key="task.id">
+          <!-- 推荐位与下方"全部玩法"走同一份解锁判定：不许从这里绕过 locked() -->
           <button
             type="button"
             :data-testid="'tasks-today-' + task.id"
-            class="flex min-h-12 w-full items-center gap-2 rounded-2xl border-2 border-cream bg-card px-3 py-2 text-left active:scale-[0.99]"
-            @click="navigate('/play/' + task.id)"
+            class="flex min-h-12 w-full items-center gap-2 rounded-2xl border-2 border-cream bg-card px-3 py-2 text-left active:scale-[0.99] disabled:opacity-60"
+            :disabled="locked(task.unlockLevel)"
+            @click="start(task.id, task.unlockLevel)"
           >
             <span class="text-2xl" aria-hidden="true">{{ task.emoji }}</span>
             <span class="min-w-0 flex-1 truncate text-base font-bold text-ink">{{ task.title }}</span>
+            <span v-if="locked(task.unlockLevel)" class="text-base text-gold" aria-hidden="true">🔒</span>
           </button>
         </li>
       </ul>

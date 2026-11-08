@@ -46,8 +46,23 @@ async function enterGame(page: Page, id: 'brush' | 'tidy' | 'sleep'): Promise<vo
  * 点之前等一下 popIn 动画，否则按钮的命中区域还在缩放中。
  */
 async function acceptCompletion(page: Page): Promise<void> {
-  await page.waitForTimeout(420);
-  await clickDesign(page, COMPLETE_LAYOUT.accept.x, COMPLETE_LAYOUT.accept.y);
+  // 不靠固定 420ms 等 popIn 动画：CI 慢机上一旦按钮还在做入场缩放，点击会落空。
+  // 改成「点一下 → 短轮询看会话是否真的退出 → 没退出就再点」，幂等且不引入魔法延时。
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    await clickDesign(page, COMPLETE_LAYOUT.accept.x, COMPLETE_LAYOUT.accept.y);
+    try {
+      await page.waitForFunction(
+        () => ((window as unknown as { __bamboo?: { events?: string[] } }).__bamboo?.events ?? [])
+          .some((event) => event.startsWith('session:exit:')),
+        undefined,
+        { timeout: 1_500, polling: 50 },
+      );
+      break;
+    } catch {
+      // 还没退出：可能按钮入场动画尚未结束，再点一次
+    }
+  }
   await waitPlayClosed(page, 20_000);
 }
 
@@ -161,12 +176,14 @@ test('完成卡片：点「收下」的右下区域也能离开这一局', async
   }
   await waitTaskComplete(page, 'sleep', 20_000);
 
-  // 等 popIn 结束，再点按钮右下区域（不是正中心）
-  await page.waitForTimeout(420);
-  await clickDesign(page, COMPLETE_LAYOUT.accept.x + 90, COMPLETE_LAYOUT.accept.y + 30);
-  expect(
-    await waitEvent(page, 'session:exit:complete', 8_000),
-    '点「收下」的右下区域没有退出：命中区没有覆盖整颗按钮',
-  ).toBe(true);
+  // 点按钮右下区域（不是正中心）：命中区必须覆盖整颗按钮。
+  // 用「点 → 等退出」的小循环代替固定 420ms：慢机上按钮可能还在入场缩放入场，点空一次不该直接判失败。
+  let exited = false;
+  const deadline = Date.now() + 8_000;
+  while (!exited && Date.now() < deadline) {
+    await clickDesign(page, COMPLETE_LAYOUT.accept.x + 90, COMPLETE_LAYOUT.accept.y + 30);
+    exited = await waitEvent(page, 'session:exit:complete', 1_500);
+  }
+  expect(exited, '点「收下」的右下区域没有退出：命中区没有覆盖整颗按钮').toBe(true);
   await waitPlayClosed(page, 20_000);
 });

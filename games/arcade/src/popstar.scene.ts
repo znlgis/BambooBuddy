@@ -51,7 +51,8 @@ const FAMILY_COLORS: readonly number[] = [THEME.warmRed, THEME.gold, THEME.water
  * 难度只体现在目标数（level=1 就是老的 24 颗），一局内不再有第 2、3 轮。
  */
 class PopstarScene extends ArcadeScene {
-  private readonly seed: number;
+  /** 种子在 create() 里算（与 bounce/tetris 一致）：同一次打开可复现，重开一局会换 */
+  private seed = 0;
   private state!: PopstarState;
   private boardGfx: Phaser.GameObjects.Graphics | null = null;
   private basketGfx: Phaser.GameObjects.Graphics | null = null;
@@ -67,11 +68,12 @@ class PopstarScene extends ArcadeScene {
 
   constructor(ctx: ArcadeContext) {
     super('popstar', ctx);
-    // 同一次打开可复现：种子只取决于游戏 id + 打开这一局的墙钟
-    this.seed = hashString(`${ctx.manifest.id}:${ctx.services.now()}`);
   }
 
   create(): void {
+    // 同一次打开可复现：种子只取决于游戏 id + 打开这一局的墙钟。
+    // 放在 create() 而不是构造函数里：场景实例被 restart 时也要换一副棋盘。
+    this.seed = hashString(`${this.ctx.manifest.id}:${this.now()}`);
     // 难度等级由外壳按这款游戏的累计完成局数传入（跨天保留）：只影响本局目标，棋盘与 level=1 完全一样
     this.state = createPopstarState(this.seed, { level: this.level });
     this.drawBackdrop();

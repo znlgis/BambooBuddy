@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getTaskSummary } from '@bamboo/content';
 import type { TaskId } from '@bamboo/content';
 import type { GameEventMap, GameModule, Stars } from '@bamboo/game-kit';
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
@@ -7,6 +8,7 @@ import { registry } from '../registry';
 import { createGameContext } from '../shell/createGameContext';
 import { recordDebugError } from '../shell/debug';
 import { platform } from '../shell/platform';
+import { startPlayClock } from '../shell/playClock';
 import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
 import { useSettings } from '../stores/settings';
@@ -37,9 +39,10 @@ const settings = useSettings();
 const { t, locale } = useI18n();
 
 let disposed = false;
+/** 重开闸门：完成卡片的「再玩一次」是 Phaser 按钮、pointerdown 触发，孩子连点两下会并发重开 */
+let restarting = false;
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let exitTimer: ReturnType<typeof setTimeout> | null = null;
-let playTimer: ReturnType<typeof setInterval> | null = null;
 let offPause: (() => void) | null = null;
 let offResume: (() => void) | null = null;
 
@@ -57,6 +60,11 @@ async function finishTask(stars: Stars): Promise<void> {
   const outcome = await progress.completeTask(props.taskId, stars);
   if (!outcome) {
     showToast([t('complete.saveWarn')]);
+    return;
+  }
+  // 任务还没解锁（深链/旧存档）时零写入：别给孩子看"竹笋 +0"
+  if (!outcome.ok) {
+    showToast([t('tasks.locked')]);
     return;
   }
   const lines: string[] = [t('complete.reward', { n: outcome.shoots })];
@@ -119,9 +127,17 @@ async function start(): Promise<void> {
   try {
     // 先等读档完成，再挂游戏：见文件顶部说明
     await progress.init();
+    // 解锁校验必须在这里再做一次：深链 #/play/<id> 与任务页的推荐位都可能绕过列表页的"锁"
+    const summary = getTaskSummary(props.taskId, locale.current);
+    if (summary !== undefined && progress.stage.id < summary.unlockLevel) {
+      navigate('/tasks');
+      return;
+    }
     const load = registry[props.taskId];
     if (!load) {
-      error.value = t('play.notFound') + props.taskId;
+      // 不把内部 id 拼进孩子读的文案：路由已经挡过未知 id，这里只留调试细节
+      recordDebugError('registry 缺少玩法：' + props.taskId);
+      error.value = t('play.notFound');
       return;
     }
     const loaded = (await load()).default;
@@ -149,12 +165,23 @@ async function start(): Promise<void> {
 
 /** 原地再来一局：卸掉旧 Phaser 实例再挂一次（不刷新页面、不回任务页） */
 async function restart(): Promise<void> {
-  if (disposed) return;
-  releaseLifecycle();
-  await mod.value?.unmount();
-  mod.value = null;
-  if (host.value) host.value.innerHTML = '';
-  await start();
+  // 连点「再玩一次」只允许第一次生效：否则第二个 restart 会销毁刚挂上的实例再挂一个
+  if (disposed || restarting) return;
+  restarting = true;
+  try {
+    releaseLifecycle();
+    await mod.value?.unmount();
+    mod.value = null;
+    if (host.value) host.value.innerHTML = '';
+    await start();
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    error.value = t('play.loadFailed');
+    recordDebugError(detail);
+    console.error('[bamboo] 重开玩法失败：' + props.taskId, cause);
+  } finally {
+    restarting = false;
+  }
 }
 
 function leaveNow(): void {
@@ -164,24 +191,26 @@ function leaveNow(): void {
 
 onMounted(() => {
   void start();
-  // 休息提醒的数据来源：每 30 秒记一次玩耍时长（只统计游戏时间）
-  playTimer = setInterval(() => {
-    void progress.addSeconds(30);
-  }, 30_000);
 });
+
+// 休息提醒的数据来源：游戏页挂载期间累计玩耍时长（合并落盘，见 playClock）
+startPlayClock((seconds) => progress.addSeconds(seconds));
 
 onBeforeUnmount(async () => {
   disposed = true;
-  if (playTimer !== null) clearInterval(playTimer);
   if (toastTimer !== null) clearTimeout(toastTimer);
   if (exitTimer !== null) clearTimeout(exitTimer);
-  playTimer = null;
   toastTimer = null;
   exitTimer = null;
   releaseLifecycle();
   // 中途退出还在念旁白 = 回到任务页继续有人说话（场景自己不一定停）
   platform.audio.stopSpeech();
-  await mod.value?.unmount();
+  try {
+    await mod.value?.unmount();
+  } catch (cause) {
+    // 卸载失败不该让路由切换变成未处理拒绝；技术细节留给调试桥
+    recordDebugError(cause instanceof Error ? cause.message : String(cause));
+  }
   mod.value = null;
 });
 </script>
@@ -208,6 +237,7 @@ onBeforeUnmount(async () => {
         data-testid="play-sound"
         class="pointer-events-auto flex min-h-14 min-w-14 items-center justify-center rounded-2xl bg-ink/75 px-3 text-2xl text-white active:scale-95"
         :aria-label="settings.muted ? t('sound.off') : t('sound.on')"
+        :aria-pressed="!settings.muted"
         @click="settings.toggle()"
       >
         {{ settings.muted ? '🔇' : '🔊' }}

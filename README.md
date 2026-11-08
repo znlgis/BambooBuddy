@@ -70,7 +70,7 @@ git tag v0.2.0 && git push origin v0.2.0
 
 1. 打开小屋，看到竹竹与五维状态（饱腹 / 精力 / 清洁 / 心情 / 健康）；
 2. 按现实时间段推荐 4 件今日小事（早上 / 中午 / 晚上）；
-3. 进入 30–90 秒小游戏：刷牙、洗手、吃饭、穿衣、洗澡、睡觉、整理、运动、情绪、学习；
+3. 进入 30–90 秒小游戏（内容按 30–90 秒设计，schema 硬约束 20–120 秒）：刷牙、洗手、吃饭、穿衣、洗澡、睡觉、整理、运动、情绪、学习；
 4. 完成后得到竹笋、星星、装扮碎片，偶尔得到贴纸；
 5. 用竹笋 / 碎片解锁衣服与小窝物件，喂竹笋给竹竹；
 6. 竹竹积累成长值，经历四个成长阶段，到第四个阶段解锁「竹竹的小屋」与旅行日记。
@@ -235,18 +235,18 @@ export default defineGame({
 
 | 预算项 | 上限 |
 |---|---|
-| 首屏 JS + CSS（gzip） | ≤ 60 KB（不含 Phaser；实测 54.4 KB，原始 160.2 KB） |
+| 首屏 JS + CSS（gzip） | ≤ 60 KB（不含 Phaser；实测 59.4 KB，原始 172.3 KB —— 余量只有 0.6 KB，新增首屏代码前先看这里） |
 | 单个懒加载 js/css（gzip） | ≤ 260 KB（Phaser 裁剪版实测 220.6 KB / 856.3 KB 原始） |
-| dist 原始大小 | ≤ 2400 KB（实测 1197 KB） |
+| dist 原始大小 | ≤ 2400 KB（实测 1290 KB） |
 | 单个非代码资源 | ≤ 200 KB |
 | 非代码资源合计 | ≤ 600 KB（当前是 0：全部几何绘制 + WebAudio 合成） |
 
-> 具体数字以 `pnpm size` 的输出为准；以上为 2026-10-19 的实测基线。
+> 具体数字以 `pnpm size` 的输出为准；以上为 2026-11-08 的实测基线。
 
 ### 最近一次验收
 
-- `pnpm verify`：typecheck / lint / **91 个单测** / content:check（中英各 10 条 + 关卡脚本 + 零漏翻）/ **pack:check** / build / size 全绿。
-- `pnpm e2e`：**20 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长锁与清档、刷新后进度保留、中英文切换与英文玩法。
+- `pnpm verify`：typecheck / lint / **243 个单测** / content:check（中英各 10 条 + 关卡脚本 + 零漏翻）/ **pack:check** / build / size 全绿。
+- `pnpm e2e`：**34 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长锁（长按进入 / 后退与直链被拒）与清档、刷新后进度保留、中英文切换与英文玩法、隐藏小游戏每日 21 局与难度。
 - `pnpm e2e:dist`：生产产物 **2 passed**——首屏不下载任何重 chunk、10 个玩法各自懒加载、Phaser 只在首个玩法时加载。
 - GitHub Actions：**Release** 手动运行全绿（web / e2e / windows / android 四个 job），产出 EXE 3.27 MB、APK 4.69 MB；推 `v*` tag 会自动挂到 Release。
 

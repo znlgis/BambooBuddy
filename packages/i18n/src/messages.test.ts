@@ -7,6 +7,7 @@ import {
   messages,
   zhCN,
 } from './index';
+import type { MessageParams } from './messages';
 
 const CJK = /[\u4e00-\u9fff]/;
 
@@ -66,5 +67,20 @@ describe('界面文案表', () => {
     expect(localeFromSearch('?lang=zh-TW')).toBe('zh-CN');
     expect(localeFromSearch('?lang=fr')).toBeNull();
     expect(localeFromSearch('')).toBeNull();
+  });
+
+  it('参数里出现 undefined / null 时保留占位符，不渲染出字面量 undefined', () => {
+    // 运行期可能来自残缺 JSON / 可选字段：类型上是 string | number，这里故意越界验证兜底
+    const withUndefined = { n: undefined } as unknown as MessageParams;
+    const withNull = { n: null } as unknown as MessageParams;
+    expect(fillTemplate('竹笋 +{n}', withUndefined)).toBe('竹笋 +{n}');
+    expect(fillTemplate('竹笋 +{n}', withNull)).toBe('竹笋 +{n}');
+    expect(fillTemplate('竹笋 +{n}', { n: 0 })).toBe('竹笋 +0');
+  });
+
+  it('ensureMessages 的返回值能区分"已就位"与"没有这份语言"', async () => {
+    // 中文常驻，永远可用；英文在上面的 beforeAll 里已加载成功
+    expect(await ensureMessages('zh-CN')).toBe(true);
+    expect(await ensureMessages('en')).toBe(true);
   });
 });

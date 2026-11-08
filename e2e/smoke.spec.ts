@@ -83,8 +83,13 @@ for (const id of TASK_IDS) {
     await playAutoplayToEnd(page, id);
 
     const save = await saveSnapshot(page);
-    expect(save?.tasks[id].completions ?? 0, '存档里 ' + id + ' 的完成次数应该 ≥1').toBeGreaterThanOrEqual(1);
-    expect(save?.tasks[id].stars ?? 0, '通关至少给 1 颗星').toBeGreaterThanOrEqual(1);
+    // 显式断言存档结构：可选链只保护 save 本身，缺键时 `save?.tasks[id].completions`
+    // 会抛 TypeError（表现为测试报错而不是断言失败，排查成本更高）
+    expect(save, '调试桥上应该有存档快照').not.toBeNull();
+    const taskProgress = save!.tasks[id];
+    expect(taskProgress, '存档里应该有 ' + id + ' 的任务记录').toBeTruthy();
+    expect(taskProgress.completions, '存档里 ' + id + ' 的完成次数应该 ≥1').toBeGreaterThanOrEqual(1);
+    expect(taskProgress.stars, '通关至少给 1 颗星').toBeGreaterThanOrEqual(1);
 
     await openTasks(page);
     await expect(page.getByTestId('task-card-' + id)).toBeVisible();

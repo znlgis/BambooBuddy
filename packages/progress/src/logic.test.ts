@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ProgressStore, SaveData } from '@bamboo/game-kit';
+import type { DayRecord, ProgressStore, SaveData, Stars } from '@bamboo/game-kit';
 import { SAVE_SCHEMA_VERSION } from '@bamboo/game-kit';
 import type { TaskSummary } from '@bamboo/content';
 import {
@@ -12,12 +12,15 @@ import {
   dayKey,
   daysBetween,
   decayStats,
+  emptyDay,
   emptySave,
   ensureDay,
   fragmentsFor,
+  isFutureVersionSave,
   levelForXp,
   migrate,
   nextStreak,
+  pruneDays,
   recommendedTasks,
   starsFor,
   statHints,
@@ -65,13 +68,17 @@ const TASKS: TaskSummary[] = [
   task({ id: 'learn', title: '学习', template: 'learn', timeSlots: ['morning', 'noon'], stats: { mood: 8 } }),
 ];
 
+/**
+ * 内存版 ProgressStore。
+ * 注意：`current === null` 表示"这台设备还没存过档"，对应的应该是 emptySave（真实
+ * IndexedDB store 对空档就是 resolve 空档），而不是 reject —— 读档失败不往这里模拟。
+ */
 function memoryStore(initial: SaveData | null = null): ProgressStore & { current: SaveData | null; writes: number } {
   const store = {
     current: initial,
     writes: 0,
     async load(): Promise<SaveData> {
-      if (!store.current) throw new Error('empty');
-      return store.current;
+      return store.current ?? emptySave(T0);
     },
     async save(data: SaveData): Promise<void> {
       store.current = data;
@@ -473,5 +480,207 @@ describe('内容层与存档层解耦', () => {
     // 这里再确认一遍纯函数不会因为当前时间不同而改变
     const morning = recommendedTasks(TODAY, 'morning', TASKS).map((t) => t.id);
     expect(morning).toEqual(recommendedTasks(TODAY, 'morning', TASKS).map((t) => t.id));
+  });
+});
+describe('坏档与时钟异常：今天永远不能被裁掉', () => {
+  /** 30 个比今天更晚的日期键（设备时钟被调快过 + 调试写入未来日期都会造成） */
+  function futureDays(): Record<string, DayRecord> {
+    const days: Record<string, DayRecord> = {};
+    for (let i = 1; i <= 30; i += 1) days[addDays(TODAY, i)] = emptyDay(addDays(TODAY, i));
+    return days;
+  }
+
+  it('pruneDays 保留 today 与未来键（纯函数）', () => {
+    const pruned = pruneDays({ ...futureDays(), [TODAY]: emptyDay(TODAY) }, 30, TODAY);
+    expect(pruned[TODAY]).toBeDefined();
+    expect(Object.keys(pruned)).toHaveLength(31);
+  });
+
+  it('migrate / ensureDay 之后今天仍然存在（不再"补完又裁掉"）', () => {
+    const raw = { ...emptySave(T0), days: futureDays() };
+    const migrated = migrate(raw, T0);
+    expect(migrated.days[TODAY]).toBeDefined();
+    const ensured = ensureDay({ ...migrated, days: futureDays() }, T0);
+    expect(ensured.days[TODAY]).toBeDefined();
+  });
+
+  it('今天缺失时 completeTask / care / addPlaySeconds 不抛异常', async () => {
+    const initial = emptySave(T0);
+    const store = memoryStore(initial);
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    // 把内存里的今天硬删掉，模拟"裁剪后今天丢失"的坏档状态
+    const broken = { ...pm.snapshot(), days: futureDays() };
+    (pm as unknown as { data: SaveData }).data = broken;
+
+    const completion = await pm.completeTask(task({ unlockLevel: 1 }), 3, T0);
+    expect(completion.ok).toBe(true);
+    expect(pm.snapshot().days[TODAY]?.completed).toEqual(['brush']);
+
+    const care = await pm.care('pat', T0);
+    expect(care.ok).toBe(true);
+
+    await pm.addPlaySeconds(30, T0);
+    expect(pm.snapshot().days[TODAY]?.seconds).toBe(30);
+  });
+});
+
+describe('读档失败与未来版本：宁可拒绝写入也不覆盖原档', () => {
+  it('load reject 时 init 抛错，且不会拿空档写盘', async () => {
+    let writes = 0;
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        throw new Error('IndexedDB read failed');
+      },
+      async save(): Promise<void> {
+        writes += 1;
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await expect(pm.init()).rejects.toThrow('IndexedDB read failed');
+    expect(writes).toBe(0);
+  });
+
+  it('读档失败后所有写操作都拒绝（不得以空档覆盖）', async () => {
+    let writes = 0;
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        throw new Error('boom');
+      },
+      async save(): Promise<void> {
+        writes += 1;
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await expect(pm.init()).rejects.toThrow('boom');
+    await expect(pm.care('pat', T0)).rejects.toThrow('boom');
+    expect(writes).toBe(0);
+  });
+
+  it('未来版本存档：init 抛错、原档不被覆盖，clear() 仍可用作自救', async () => {
+    const rawFuture = { schemaVersion: 99, pet: { xp: 123 }, tasks: {}, days: {} };
+    let disk: unknown = rawFuture;
+    let writes = 0;
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        // 真实 web store 会先 migrate：这里模拟"migrate 降级出来的空档带未来版本标记"
+        return migrate(rawFuture, T0);
+      },
+      async save(data: SaveData): Promise<void> {
+        disk = data;
+        writes += 1;
+      },
+    };
+    expect(isFutureVersionSave(migrate(rawFuture, T0))).toBe(true);
+
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await expect(pm.init()).rejects.toThrow();
+    expect(writes).toBe(0);
+    expect(disk).toBe(rawFuture);
+
+    // 家长页清档是唯一被允许的写入口
+    await pm.clear(T0);
+    expect(writes).toBe(1);
+    expect((disk as SaveData).pet.xp).toBe(0);
+  });
+});
+
+describe('读档期间写入：等待读档而不是覆盖旧档', () => {
+  it('load 未完成时 care() 会等读档完成，并以真实存档为底结算', async () => {
+    const real = emptySave(T0);
+    real.pet.intimacy = 10;
+    real.pet.shoots = 50;
+    let release: ((save: SaveData) => void) | null = null;
+    let disk: SaveData = real;
+    const store: ProgressStore = {
+      load: () =>
+        new Promise<SaveData>((resolve) => {
+          release = resolve;
+        }),
+      async save(data: SaveData): Promise<void> {
+        disk = data;
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    const initPromise = pm.init();
+    const carePromise = pm.care('hug', T0); // 读档完成前的点击
+    await Promise.resolve();
+    release!(real);
+    await initPromise;
+    const care = await carePromise;
+
+    expect(care.ok).toBe(true);
+    expect(pm.snapshot().pet.intimacy).toBe(12); // 10 + 2，而不是空的 0 + 2
+    expect(pm.snapshot().pet.shoots).toBe(50); // 旧档没有被空档覆盖
+    expect(disk.pet.shoots).toBe(50);
+  });
+
+  it('没 await init 就调用写方法时，init 完成后不覆盖这次写入', async () => {
+    const real = emptySave(T0);
+    real.pet.shoots = 7;
+    let disk: SaveData = real;
+    const store: ProgressStore = {
+      load: () => new Promise<SaveData>((resolve) => setTimeout(() => resolve(real), 40)),
+      async save(data: SaveData): Promise<void> {
+        disk = data;
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    // 构造函数不会自动 init：这里直接写（等价于调用方忘了 await init）
+    const feedPromise = pm.feed(T0);
+    const initPromise = pm.init();
+    await initPromise;
+    const fed = await feedPromise;
+    expect(fed.feeds).toBe(1);
+    expect(pm.snapshot().pet.feeds).toBe(1);
+    expect(pm.snapshot().pet.shoots).toBe(6);
+    expect(disk.pet.feeds).toBe(1);
+  });
+});
+
+describe('运行时输入校验（类型断言不能代替校验）', () => {
+  it('阶段不足时 completeTask 返回 locked，且不写任何奖励', async () => {
+    const before = emptySave(T0);
+    before.pet.xp = 0; // 阶段 1
+    const store = memoryStore(before);
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+
+    const outcome = await pm.completeTask(task({ id: 'sport', unlockLevel: 3 }), 3, T0);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reason).toBe('locked');
+    expect(outcome.shoots).toBe(0);
+    expect(pm.snapshot().pet.xp).toBe(0);
+    expect(pm.snapshot().days[TODAY]?.completed).toEqual([]);
+    expect(pm.snapshot().tasks.sport.completions).toBe(0);
+  });
+
+  it('越界星星被夹到 0..3', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    await pm.completeTask(task(), 9 as Stars, T0);
+    expect(pm.snapshot().tasks.brush.stars).toBe(3);
+    expect(store.current?.tasks.brush.stars).toBe(3);
+  });
+
+  it('NaN 时长不会写进日记录', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    await pm.addPlaySeconds(30, T0);
+    await pm.addPlaySeconds(Number.NaN, T0);
+    expect(pm.snapshot().days[TODAY]?.seconds).toBe(30);
+  });
+
+  it('成长值/等级对 NaN 有兜底（不再显示 NaN）', () => {
+    expect(levelForXp(Number.NaN)).toBe(1);
+    expect(growth.xpToNextStage(Number.NaN)).toBe(60);
+    expect(growth.stageForXp(Number.NaN).id).toBe(1);
+  });
+
+  it('非法日历日（2026-02-31）不会被算成 3 月 3 日', () => {
+    expect(daysBetween('2026-02-31', '2026-03-03')).toBe(0);
+    expect(addDays('2026-02-31', 1)).toBe('2026-02-31');
   });
 });

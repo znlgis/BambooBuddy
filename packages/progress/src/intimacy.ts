@@ -28,8 +28,6 @@ export interface IntimacyLevel {
   nameEn: string;
   gesture: string;
   gestureEn: string;
-  /** 下一档还要多少；到顶为 null */
-  nextAt: number | null;
 }
 
 export function intimacyLevel(points: number): IntimacyLevel {
@@ -39,14 +37,12 @@ export function intimacyLevel(points: number): IntimacyLevel {
     if (safe >= INTIMACY_STEPS[i]!.at) index = i;
   }
   const current = INTIMACY_STEPS[index]!;
-  const next = INTIMACY_STEPS[index + 1];
   return {
     level: index + 1,
     name: current.name,
     nameEn: current.nameEn,
     gesture: current.gesture,
     gestureEn: current.gestureEn,
-    nextAt: next ? next.at : null,
   };
 }
 

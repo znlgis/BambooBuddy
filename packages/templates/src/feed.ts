@@ -51,9 +51,6 @@ const GRAB_RADIUS = 100;
 /** 12 秒没有任何有效操作才提示 */
 const IDLE_HINT_MS = 12_000;
 
-/** "吃得真均衡"这句夸奖至少留这么久再做完成结算，不然会被完成卡片打断 */
-const BALANCE_LINE_MS = 900;
-
 /** 食物类别 → 文案键（中英共用一份；孩子看图为主，文字只做备份） */
 const FOOD_LABEL_KEYS: Record<FoodKind, MessageKey> = {
   bamboo: 'food.bamboo',
@@ -99,7 +96,6 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
     private lastActionAt = 0;
     private done = false;
     private balancedSaid = false;
-    private balancedAt = 0;
     /** autoplay 的墙钟定时器：shutdown 时必须清掉，否则退出后还会往已销毁的场景里塞操作 */
     private autoplayTimers: number[] = [];
 
@@ -149,7 +145,8 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
 
     private drawWorld(): void {
       const room = this.add.graphics().setDepth(0);
-      drawRoom(room, 'kitchen', this.W, this.H);
+      // 房间来自关卡脚本（schema 的 room 是 ROOMS 枚举），不要在这里写死
+      drawRoom(room, this.level.room, this.W, this.H);
       this.drawHeader(this.ctx.task.title);
 
       // 竹竹在桌子后面：先画它，桌面会把下半身挡住
@@ -358,7 +355,6 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
       const progress = feedProgress(this.state, this.level);
       if (progress.balanced && !this.balancedSaid) {
         this.balancedSaid = true;
-        this.balancedAt = this.ctx.services.now();
         this.say(this.tr('game.balanced'), 2600, 430);
       }
       if (progress.complete) this.complete();
@@ -418,14 +414,10 @@ export function createFeedScene(ctx: GameContext, level: FeedLevel): Phaser.Type
       this.done = true;
       this.hideMouthHint();
       this.hideNudgeHand();
-      // "吃得真均衡"刚说出口时稍等一下，别让完成卡片把它盖掉
-      const elapsed = this.balancedAt === 0 ? BALANCE_LINE_MS : this.ctx.services.now() - this.balancedAt;
-      const wait = Math.max(0, BALANCE_LINE_MS - elapsed);
-      if (wait > 0) {
-        this.autoplayTimers.push(window.setTimeout(() => this.finishTask(), wait));
-      } else {
-        this.finishTask();
-      }
+      // 落档优先：完成判定一成立就同步 finishTask。
+      // 原来这里会等 "吃得真均衡" 那句夸奖满 900ms 再发档，用的是 window.setTimeout；
+      // 孩子在这段窗口里按返回就会整局不落档（白玩一局）—— 夸奖已经由 say() 播过，不必拿存档去换。
+      this.finishTask();
     }
 
     // ---------------- 提示与小手 ----------------

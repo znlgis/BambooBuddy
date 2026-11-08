@@ -184,19 +184,16 @@ export function createRhythmScene(ctx: GameContext, level: RhythmLevel): Phaser.
       this.done = true;
       this.clearAuto();
       this.syncHud();
-      // 调试模式不拖尾：QA 的预算是 6 秒内完成
-      if (this.autoplay || this.instant) {
-        this.finishTask({ praise: this.ctx.task.done });
-        return;
-      }
-      this.time.delayedCall(220, () => this.finishTask({ praise: this.ctx.task.done }));
+      // 落档优先：完成判定一成立就同步 finishTask（原来非调试模式要等 220ms）
+      this.finishTask({ praise: this.ctx.task.done });
     }
 
     // ---------------- 绘制（静态部分只画一次） ----------------
 
     private drawBackground(): void {
       const bg = this.add.graphics().setDepth(0);
-      drawRoom(bg, 'yard', this.W, this.H);
+      // 房间来自关卡脚本（schema 的 room 是 ROOMS 枚举），不要在这里写死
+      drawRoom(bg, this.level.room, this.W, this.H);
     }
 
     private drawPanel(): void {

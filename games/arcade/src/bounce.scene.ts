@@ -63,6 +63,11 @@ class BounceScene extends ArcadeScene {
   private hudG!: Phaser.GameObjects.Graphics;
   private goalText!: Phaser.GameObjects.Text;
   private starsText!: Phaser.GameObjects.Text;
+  /** 方块层脏标记：只有碎块 / 开花 / 发射后下沉才会变，不用每帧重画 */
+  private blocksDirty = true;
+  /** HUD 文本的上一帧值：内容没变就不调用 setText（Text 重排是每次 setText 的固定开销） */
+  private lastGoalText = '';
+  private lastStarsText = '';
 
   constructor(ctx: ArcadeContext) {
     super('bounce', ctx);
@@ -89,6 +94,7 @@ class BounceScene extends ArcadeScene {
     this.aimG = this.add.graphics().setDepth(12);
     this.launcherG = this.add.graphics().setDepth(14);
     this.ballsG = this.add.graphics().setDepth(16);
+    this.blocksDirty = true;
 
     this.drawAll();
 
@@ -141,6 +147,8 @@ class BounceScene extends ArcadeScene {
     const shot = fireBall(this.state, this.aim);
     if (!shot.fired) return;
     this.state = shot.state;
+    // 第 6/12… 发会整体下沉，方块位置变了
+    this.blocksDirty = true;
     this.sfx('jump');
     this.applyEvents(shot.events);
   }
@@ -188,6 +196,8 @@ class BounceScene extends ArcadeScene {
   }
 
   private applyEvents(events: BounceEvents): void {
+    // 方块层只在「碎块 / 开花」时变化；发射可能触发整体下沉，也要重画
+    if (events.broken.length > 0 || events.flowered.length > 0) this.blocksDirty = true;
     if (events.broken.length > 0) {
       this.sfx('pop');
       for (const block of events.broken) this.onBlockBroken(block);
@@ -256,6 +266,7 @@ class BounceScene extends ArcadeScene {
     if (this.finishSent) return;
     this.finishSent = true;
     this.dragging = false;
+    this.blocksDirty = true;
     this.drawAll();
     this.finish(scoreOf(this.state));
   }
@@ -286,8 +297,13 @@ class BounceScene extends ArcadeScene {
 
   // ---------------- 绘制 ----------------
 
+  /**
+   * 分两层画：方块是静态层（只有 events 里碎块/开花/下沉时才变），
+   * 球、瞄准虚线、发射器、HUD 是动态层（每帧都要动）。
+   * 以前 5 层每帧全量重画，60fps 下白白重建几十个 roundRect。
+   */
   private drawAll(): void {
-    this.drawBlocks();
+    if (this.blocksDirty) this.drawBlocks();
     this.drawBalls();
     this.drawAim();
     this.drawLauncher();
@@ -333,6 +349,7 @@ class BounceScene extends ArcadeScene {
   }
 
   private drawBlocks(): void {
+    this.blocksDirty = false;
     const g = this.blocksG;
     g.clear();
     for (const block of this.state.blocks) {
@@ -466,12 +483,18 @@ class BounceScene extends ArcadeScene {
 
   private drawHud(): void {
     const remaining = remainingBlocks(this.state);
-    this.starsText.setText(String(scoreOf(this.state)));
-    this.goalText.setText(
-      this.finishSent
-        ? this.t('arcade.roundDone')
-        : this.t('arcade.goalBlocks', { n: remaining }),
-    );
+    const starsText = String(scoreOf(this.state));
+    if (starsText !== this.lastStarsText) {
+      this.lastStarsText = starsText;
+      this.starsText.setText(starsText);
+    }
+    const goalText = this.finishSent
+      ? this.t('arcade.roundDone')
+      : this.t('arcade.goalBlocks', { n: remaining });
+    if (goalText !== this.lastGoalText) {
+      this.lastGoalText = goalText;
+      this.goalText.setText(goalText);
+    }
 
     const g = this.hudG;
     g.clear();

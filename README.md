@@ -258,7 +258,7 @@ export default defineGame({
 
 ### 最近一次验收
 
-- `pnpm verify`：typecheck / lint / **376 个单测** / content:check（中英各 10 条 × 2 套关卡 + 语义规则 + 零漏翻）/ **pack:check** / build / size 全绿。
+- `pnpm verify`：typecheck / lint / **387 个单测** / content:check（中英各 10 条 × 2 套关卡 + 语义规则 + 零漏翻）/ **pack:check** / build / size 全绿。
 - `pnpm e2e`：**41 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长门（长按 → 成人算术门 → 进入 / 后退与直链被拒）与清档、成人门连错 3 次锁定、装扮扣费、日记朗读、家长页时长、**休息提醒落档 / 存档不可用提示 / 读档失败提示**、刷新后进度保留、中英文切换与英文玩法、隐藏小游戏每日 21 局与难度。
 - `pnpm e2e:dist`：生产产物 **2 passed**——首屏不下载任何重 chunk、10 个玩法各自懒加载、Phaser 只在首个玩法时加载。
 - GitHub Actions：**Release** 手动运行全绿（web / e2e / windows / android 四个 job），产出 EXE 3.27 MB、APK 4.69 MB；推 `v*` tag 会自动挂到 Release。

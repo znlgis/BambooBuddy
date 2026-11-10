@@ -101,6 +101,9 @@ export function scrubAt(
 
 /** 刷干净之后的收尾：冲/擦够次数就完成 */
 export function finishTap(state: ScrubState, level: ScrubLevel): { state: ScrubState; done: boolean } {
+  // 已经完成后再点（完成卡弹出时的补点）不再累加计数、也不再返回完成：
+  // 场景层有 done 守卫，这里再兜一层，任何调用方都不会重复触发一次收尾。
+  if (state.done) return { state, done: false };
   if (!allSpotsClean(state, level)) return { state, done: false };
   const taps = level.finish?.taps ?? 0;
   if (taps === 0) return { state: { ...state, done: true }, done: true };

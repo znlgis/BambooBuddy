@@ -68,6 +68,9 @@ export function chooseEmotion(state: PickState, level: PickLevel, emotion: Emoti
 }
 
 export function comfort(state: PickState, level: PickLevel): { state: PickState; finished: boolean } {
+  // 已完成后再点安慰按钮（完成卡正在弹出时的补点）不能再来一次 finished：
+  // 场景层有 done / comfortVisible 守卫，这里再兜一层，任何调用方都不会重复结算。
+  if (state.done) return { state, finished: false };
   if (state.phase !== 'comfort') return { state, finished: false };
   const nextRound = state.round + 1;
   if (nextRound >= level.rounds.length) {

@@ -534,3 +534,86 @@ describe('步骤进度：order / dress / tidy 的数据侧', () => {
     expect(stepDotsLeft(Number.NaN)).toBe(375);
   });
 });
+
+/**
+ * 完成之后孩子还会乱点（返回键 / 补一下 / 连点安慰按钮）：
+ * 场景层靠 finished/done/locked 守卫拦住，这些守卫依赖「完成态的纯函数不再前进」，
+ * 所以把数据契约锁在这里 —— 任何一条判定改成"完成后再算一次"，就会在单测先炸，
+ * 而不是等到孩子多拿一颗星、多一个对勾才发现。
+ */
+describe('完成态之后的重复输入：不推进、不重复计数、不二次完成', () => {
+  it('order：做完后再点任意一步仍是 complete，状态不变', () => {
+    let state = createOrderState();
+    for (const step of orderLevel.steps) state = tapStep(state, orderLevel, step.id).state;
+    expect(orderComplete(state, orderLevel)).toBe(true);
+    const again = tapStep(state, orderLevel, orderLevel.steps[0]!.id);
+    expect(again.status).toBe('complete');
+    expect(again.state).toEqual(state);
+    expect(orderStepProgress(again.state, orderLevel)).toEqual({ index: 3, total: 3 });
+  });
+
+  it('pick：最后一轮安慰完再点，不会二次 finished', () => {
+    let state = createPickState();
+    state = chooseEmotion(state, pickLevel, 'sad').state;
+    state = comfort(state, pickLevel).state;
+    state = chooseEmotion(state, pickLevel, 'happy').state;
+    const done = comfort(state, pickLevel);
+    expect(done.finished).toBe(true);
+    expect(done.state.done).toBe(true);
+    // 完成卡弹出后，孩子再点一次安慰按钮：不能再来一遍 finished
+    const repeat = comfort(done.state, pickLevel);
+    expect(repeat.finished).toBe(false);
+    expect(repeat.state).toEqual(done.state);
+    expect(chooseEmotion(done.state, pickLevel, 'happy').status).toBe('done');
+  });
+
+  it('learn：答完最后一题后再点选项仍是 done，不前进', () => {
+    let state = createLearnState();
+    state = chooseOption(state, learnLevel, 0).state;
+    const last = chooseOption(state, learnLevel, 1);
+    expect(last.status).toBe('done');
+    expect(last.state.done).toBe(true);
+    for (const index of [0, 1]) {
+      const again = chooseOption(last.state, learnLevel, index);
+      expect(again.status).toBe('done');
+      expect(again.state).toEqual(last.state);
+    }
+  });
+
+  it('feed：吃完后同一口再喂不会变负数，也不会重复完成', () => {
+    let state = createFeedState();
+    for (const food of feedLevel.foods) {
+      for (let i = 0; i < food.bites; i += 1) state = bite(state, feedLevel, food.id).state;
+    }
+    expect(feedProgress(state, feedLevel).complete).toBe(true);
+    const again = bite(state, feedLevel, feedLevel.foods[0]!.id);
+    expect(again.left).toBe(0);
+    expect(Object.values(again.state).every((left) => left >= 0)).toBe(true);
+    expect(feedProgress(again.state, feedLevel).complete).toBe(true);
+  });
+
+  it('scrub：冲够次数完成后再点，不会继续累加也不二次完成', () => {
+    let state = createScrubState(scrubLevel);
+    for (const spot of scrubLevel.spots) {
+      for (let i = 0; i < scrubLevel.rubs; i += 1) state = scrubAt(state, scrubLevel, spot.x, spot.y).state;
+    }
+    state = finishTap(state, scrubLevel).state;
+    const done = finishTap(state, scrubLevel);
+    expect(done.done).toBe(true);
+    expect(isScrubComplete(done.state, scrubLevel)).toBe(true);
+    const again = finishTap(done.state, scrubLevel);
+    expect(again.done).toBe(false);
+    expect(again.state).toEqual(done.state);
+    expect(again.state.finishTaps).toBe(2);
+  });
+
+  it('dress / tidy：全部完成后进度停在 total，不会越界', () => {
+    let dressState = createDressState();
+    for (const item of dressLevel.items) dressState = tryDress(dressState, dressLevel, item.id, item.slot).state;
+    expect(dressStepProgress(dressState, dressLevel)).toEqual({ index: 3, total: 3 });
+
+    let tidyState = createTidyState();
+    for (const item of tidyLevel.items) tidyState = tryTidy(tidyState, tidyLevel, item.id, item.kind).state;
+    expect(tidyStepProgress(tidyState, tidyLevel)).toEqual({ index: 4, total: 4 });
+  });
+});

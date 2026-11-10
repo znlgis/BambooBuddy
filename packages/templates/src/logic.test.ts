@@ -15,9 +15,10 @@ import {
   feedProgress,
   totalBites,
 } from './feed.logic';
-import { createDressState, dressComplete, dressLevelSchema, tryDress } from './dress.logic';
-import { createOrderState, currentStep, orderComplete, orderLevelSchema, tapStep } from './order.logic';
-import { createTidyState, tidyComplete, tidyLevelSchema, tidyProgress, tryTidy } from './tidy.logic';
+import { createDressState, dressComplete, dressLevelSchema, stepProgress as dressStepProgress, tryDress } from './dress.logic';
+import { createOrderState, currentStep, orderComplete, orderLevelSchema, stepProgress as orderStepProgress, tapStep } from './order.logic';
+import { createTidyState, stepProgress as tidyStepProgress, tidyComplete, tidyLevelSchema, tidyProgress, tryTidy } from './tidy.logic';
+import { STEP_DOTS, stepDotsLeft, stepProgressOf } from './layout';
 import {
   createRhythmState,
   cycleMs,
@@ -440,5 +441,66 @@ describe('schema 注册表与契约', () => {
     for (const schema of Object.values(templateSchemas)) {
       expect(schema.safeParse({}).success).toBe(false);
     }
+  });
+});
+
+describe('步骤进度：order / dress / tidy 的数据侧', () => {
+  it('order：index 从 1 开始，做一步进一格，做完停在 total', () => {
+    let state = createOrderState();
+    expect(orderStepProgress(state, orderLevel)).toEqual({ index: 1, total: 3 });
+    state = tapStep(state, orderLevel, 'curtain').state;
+    expect(orderStepProgress(state, orderLevel)).toEqual({ index: 2, total: 3 });
+    // 点错不推进进度（与"点错不清进度"同一条规矩）
+    const wrong = tapStep(state, orderLevel, 'blanket');
+    expect(wrong.status).toBe('wrong');
+    expect(orderStepProgress(wrong.state, orderLevel)).toEqual({ index: 2, total: 3 });
+    state = tapStep(state, orderLevel, 'lamp').state;
+    state = tapStep(state, orderLevel, 'blanket').state;
+    expect(orderStepProgress(state, orderLevel)).toEqual({ index: 3, total: 3 });
+  });
+
+  it('dress：穿上几件就是第几格', () => {
+    let state = createDressState();
+    expect(dressStepProgress(state, dressLevel)).toEqual({ index: 1, total: 3 });
+    state = tryDress(state, dressLevel, 'hat', 'hat').state;
+    expect(dressStepProgress(state, dressLevel)).toEqual({ index: 2, total: 3 });
+    // 放错的那一下不计入进度
+    const wrong = tryDress(state, dressLevel, 'bib', 'shoes');
+    expect(dressStepProgress(wrong.state, dressLevel)).toEqual({ index: 2, total: 3 });
+    state = tryDress(state, dressLevel, 'bib', 'bib').state;
+    state = tryDress(state, dressLevel, 'shoes', 'shoes').state;
+    expect(dressStepProgress(state, dressLevel)).toEqual({ index: 3, total: 3 });
+  });
+
+  it('tidy：归位几个玩具就是第几格', () => {
+    let state = createTidyState();
+    expect(tidyStepProgress(state, tidyLevel)).toEqual({ index: 1, total: 4 });
+    state = tryTidy(state, tidyLevel, 'b1', 'ball').state;
+    expect(tidyStepProgress(state, tidyLevel)).toEqual({ index: 2, total: 4 });
+    const wrong = tryTidy(state, tidyLevel, 'k1', 'ball');
+    expect(tidyStepProgress(wrong.state, tidyLevel)).toEqual({ index: 2, total: 4 });
+    for (const item of tidyLevel.items.slice(1)) {
+      state = tryTidy(state, tidyLevel, item.id, item.kind).state;
+    }
+    expect(tidyStepProgress(state, tidyLevel)).toEqual({ index: 4, total: 4 });
+  });
+
+  it('空关卡与非法输入都不会把 NaN 画进界面', () => {
+    expect(stepProgressOf(0, 0)).toEqual({ index: 1, total: 0 });
+    expect(stepProgressOf(Number.NaN, 4)).toEqual({ index: 1, total: 4 });
+    expect(stepProgressOf(2, Number.NaN)).toEqual({ index: 1, total: 0 });
+    expect(stepProgressOf(-3, 4)).toEqual({ index: 1, total: 4 });
+    expect(stepProgressOf(99, 4)).toEqual({ index: 4, total: 4 });
+    expect(stepProgressOf(2.7, 3.8)).toEqual({ index: 3, total: 3 });
+  });
+
+  it('进度点常量：圆点不重叠、居中算法正确', () => {
+    expect(STEP_DOTS.radius).toBeGreaterThan(0);
+    expect(STEP_DOTS.gap).toBeGreaterThan(STEP_DOTS.radius * 2);
+    expect(STEP_DOTS.y).toBeGreaterThan(0);
+    expect(stepDotsLeft(1)).toBe(375);
+    expect(stepDotsLeft(3)).toBe(375 - STEP_DOTS.gap);
+    expect(stepDotsLeft(0)).toBe(375);
+    expect(stepDotsLeft(Number.NaN)).toBe(375);
   });
 });

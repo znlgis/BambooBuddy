@@ -129,7 +129,15 @@ export interface GameModule {
  * 存档（纯数据；读写与迁移在 @bamboo/progress）
  * ------------------------------------------------------------------ */
 
-export const SAVE_SCHEMA_VERSION = 4;
+/**
+ * 存档版本。每版都只加字段：缺的字段由 migrate 的 sanitize 逐条兜底，老档一根竹笋都不会少。
+ * - v2：隐藏小游戏的 SaveData.arcade / DayRecord.arcade
+ * - v3：DayRecord.arcadeSecret（竹林小路彩蛋）
+ * - v4：DayRecord.arcadePlays（今天已完成局数，三款合计）
+ * - v5：累计与"上次"口径 —— pet.totalCompletions / pet.birdFeeds / tasks[].lastMistakes /
+ *       DayRecord.restWrapDismissed（30 分钟收尾卡片当天已收下）
+ */
+export const SAVE_SCHEMA_VERSION = 5;
 
 /**
  * 三款隐藏小游戏的 id：与日常任务（TaskId）完全分开的两组概念。
@@ -177,6 +185,10 @@ export interface PetState {
   room: Partial<Record<RoomSlot, string>>;
   /** 累计喂了多少根竹笋（日记/家长页的一个小数字） */
   feeds: number;
+  /** 累计完成过多少件小事（含同一天重复玩）：里程碑与家长页的"累计"口径，不是连续天数 */
+  totalCompletions: number;
+  /** 喂过小鸟几次：竹笋的轻量消耗出口，只记次数、不给任何数值增益 */
+  birdFeeds: number;
 }
 
 export interface TaskProgress {
@@ -189,6 +201,8 @@ export interface TaskProgress {
   /** 连续完成天数 */
   streak: number;
   bestStreak: number;
+  /** 上一次完成时的失误数（默认 0）：完成卡只在"比上次少错 X 次"时夸一句，从不显示退步 */
+  lastMistakes: number;
 }
 
 export interface DayRecord {
@@ -201,6 +215,8 @@ export interface DayRecord {
   /** 今天玩游戏的秒数（只统计游戏时间，家长页与 20 分钟休息提醒用） */
   seconds: number;
   restDismissed: boolean;
+  /** 30 分钟「玩够啦」收尾卡片今天已经收下：只影响这一张卡片，不锁任何功能 */
+  restWrapDismissed: boolean;
   /** 今天玩过哪些隐藏小游戏（去重；日记与家长页用） */
   arcade: ArcadeGameId[];
   /**

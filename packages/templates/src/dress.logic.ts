@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { CLOTHING_KINDS, hexSchema, normalized, ROOMS } from './common';
+import { stepProgressOf } from './layout';
+import type { StepProgress } from './layout';
 
 /**
  * 穿衣：给竹竹挑一件、拖到它该去的地方（帽子→头、围兜→胸口、书包→背后、鞋→脚）。
@@ -53,4 +55,10 @@ export function dressComplete(state: DressState, level: DressLevel): boolean {
 
 export function wornSlots(state: DressState): ClothingKind[] {
   return [...new Set(Object.values(state))];
+}
+
+/** 步骤进度（数据侧，UI 用它画顶部圆点）：index 从 1 开始，全部穿好停在 total */
+export function stepProgress(state: DressState, level: DressLevel): StepProgress {
+  const done = level.items.filter((item) => state[item.id] === item.slot).length;
+  return stepProgressOf(done, level.items.length);
 }

@@ -10,6 +10,7 @@ import {
   checkBannedWords,
   checkInventory,
   checkLevelScript,
+  checkLevelVariants,
   checkNoCjk,
 } from './content-rules';
 
@@ -29,6 +30,8 @@ function report(issues: readonly string[]): void {
 
 function checkTask(task: TaskDetail, locale: Locale): void {
   report(checkLevelScript(task, locale));
+  // 第 2 套及以后的关卡：同样要过 schema + 语义规则，且彼此不能完全相同
+  report(checkLevelVariants(task, locale));
   if (locale === 'zh-CN') {
     report(checkBannedWords(task, ['失败', '惩罚', '笨蛋', '输了', '淘汰'], '中文'));
   } else {
@@ -57,6 +60,9 @@ for (const task of taskDetails) {
       task.reward.shoots +
       ' 成长+' +
       task.reward.xp,
+  );
+  console.log(
+    '  · 关卡套数：' + (1 + (task.variants?.length ?? 0)) + ' 套（loadTask 按日期确定性选一套）',
   );
   console.log('  · 习惯：' + task.habit + '｜语音：' + task.intro);
 }

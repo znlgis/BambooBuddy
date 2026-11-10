@@ -11,8 +11,8 @@ import type {
 } from '@bamboo/game-kit';
 import type { TaskSummary } from '@bamboo/content';
 import { CARE_ACTIONS, arcadeLevelFor } from '@bamboo/game-kit';
-import { CLOTHING_SLOTS, findItem, ownsItem } from './catalog';
-import type { CatalogItem } from './catalog';
+import { CLOTHING_SLOTS, findItem, milestonesFor, ownsItem } from './catalog';
+import type { CatalogItem, Milestone } from './catalog';
 import {
   ARCADE_DAILY_PLAYS,
   arcadeStatus as readArcadeStatus,
@@ -25,8 +25,19 @@ import type { ArcadeStatus } from './arcade';
 import { dayKey, daysBetween } from './day';
 import { stageForXp } from './growth';
 import { CARE_MOOD, CARE_POINTS } from './intimacy';
-import { completionReward, earnsSticker, fragmentsFor, nextStreak, statsDeltaFor } from './rewards';
 import {
+  completionReward,
+  earnsSticker,
+  feedBird as feedBirdPure,
+  fragmentsFor,
+  harvestMultiplier,
+  nextStreak,
+  progressFor,
+  statsDeltaFor,
+} from './rewards';
+import type { BirdFeedResult } from './rewards';
+import {
+  MAX_STORED_MISTAKES,
   emptyDay,
   emptySave,
   emptyTaskProgress,
@@ -42,6 +53,12 @@ function intStars(value: Stars): Stars {
   return Math.min(3, Math.max(0, safe)) as Stars;
 }
 
+/** 失误数的运行时夹取：同样来自事件桥（不可信），夹到 0..MAX_STORED_MISTAKES 的整数 */
+function intMistakes(value: number | undefined): number {
+  const safe = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 0;
+  return Math.min(MAX_STORED_MISTAKES, Math.max(0, safe));
+}
+
 export interface CompletionOutcome {
   /** 结算是否真的生效：false 只发生在"任务还没解锁"（reason = 'locked'） */
   ok: boolean;
@@ -55,6 +72,27 @@ export interface CompletionOutcome {
   sticker: boolean;
   /** 这一局刚好跨过「今天四件小事」的门槛：外壳据此弹出「发现一扇小门」 */
   arcadeUnlocked: boolean;
+  /** 这一次的失误数（玩法报上来的，已夹取） */
+  mistakes: number;
+  /** 比上一次少错了几次；没有更好就是 0（完成卡只在 > 0 时夸一句） */
+  better: number;
+  /** 这一次是不是丰收日：竹笋奖励已经 ×2（成长值不翻倍） */
+  harvest: boolean;
+  /** 累计完成件数（含这一次）：里程碑与家长页的累计口径 */
+  totalCompletions: number;
+  /** 这一次刚好跨过的累计里程碑；没有就 null */
+  milestone: Milestone | null;
+}
+
+/**
+ * completeTask 的第三个参数：既接受"现在"的时间戳（老调用一行都不用改），
+ * 也接受带失误数的对象。失误数来自 GameEventMap['task:complete'].mistakes。
+ */
+export interface CompletionWhen {
+  /** 显式传入的当前时间（等价于第三参数直接传 number） */
+  now?: number;
+  /** 这一次的失误数（默认 0；越界会被夹取） */
+  mistakes?: number;
 }
 
 export type ArcadePlayReason = 'unknown' | 'notUnlocked' | 'limit';
@@ -92,6 +130,9 @@ export interface FeedOutcome {
   reason?: 'noShoots';
   feeds: number;
 }
+
+/** 喂小鸟的结果：判定在 rewards.feedBird（纯函数），这里只多一层"判定即落档" */
+export type BirdFeedOutcome = BirdFeedResult;
 
 export type UnlockReason = 'missing' | 'owned' | 'level' | 'noShoots' | 'noFragments';
 export interface UnlockOutcome {
@@ -214,9 +255,23 @@ export class ProgressManager {
     return { decayedDays: Math.max(0, gap) };
   }
 
-  /** 完成一次任务：奖励、状态收益、连续天数、贴纸全部在这里结算 */
-  async completeTask(task: TaskSummary, stars: Stars, now = this.clock()): Promise<CompletionOutcome> {
+  /**
+   * 完成一次任务：奖励、状态收益、连续天数、贴纸、上次失误、累计件数全部在这里结算。
+   *
+   * 第三参数既接受时间戳（老调用：completeTask(task, stars, now)），也接受
+   * `{ now?, mistakes? }`（玩法把 task:complete 里的 mistakes 一起报上来）。
+   */
+  async completeTask(
+    task: TaskSummary,
+    stars: Stars,
+    when: number | CompletionWhen = this.clock(),
+  ): Promise<CompletionOutcome> {
     await this.ready();
+    const now = typeof when === 'number' ? when : (when.now ?? this.clock());
+    // 老调用（第三参数是时间戳）没有失误数：这一次既不做"比上次少错"的比较、也不覆盖
+    // 存档里的 lastMistakes —— 还没接 mistakes 之前，完成卡不能凭空夸一句"进步啦"。
+    const suppliedMistakes = typeof when === 'number' ? undefined : when.mistakes;
+    const mistakes = intMistakes(suppliedMistakes);
     const today = dayKey(now);
     const data = ensureDay(this.data, now);
     const day = data.days[today] ?? emptyDay(today);
@@ -234,17 +289,30 @@ export class ProgressManager {
         fragments: 0,
         sticker: false,
         arcadeUnlocked: false,
+        mistakes: 0,
+        better: 0,
+        harvest: false,
+        totalCompletions: data.pet.totalCompletions,
+        milestone: null,
       };
     }
     const safeStars = intStars(stars);
     const arcadeWasUnlocked = isArcadeUnlocked(day);
     const firstToday = !day.completed.includes(task.id);
     const distinctToday = day.completed.length + (firstToday ? 1 : 0);
-    const reward = completionReward(task, firstToday);
+    // 丰收日（每周六）竹笋 ×2：奖励数值仍然只由 rewards.completionReward 算，这里不写死任何数字
+    const multiplier = harvestMultiplier(today);
+    const reward = completionReward(task, firstToday, multiplier);
     const fragments = fragmentsFor(distinctToday, firstToday);
     const previous = data.tasks[task.id] ?? emptyTaskProgress(task.id);
     const streak = nextStreak(previous.lastCompletedDay, today, previous.streak);
     const sticker = earnsSticker(streak, data.pet.stickers.includes(task.id));
+    const better =
+      suppliedMistakes === undefined ? 0 : progressFor(suppliedMistakes, previous.lastMistakes).better;
+    const totalCompletions = data.pet.totalCompletions + 1;
+    // 这一次刚好跨过的累计里程碑（+1 最多跨过一个；老档回填过 total 时同样按"跨过"算）
+    const milestone =
+      milestonesFor(totalCompletions).find((item) => item.at > data.pet.totalCompletions) ?? null;
 
     const progress: TaskProgress = {
       taskId: task.id,
@@ -254,6 +322,8 @@ export class ProgressManager {
       lastCompletedDay: today,
       streak,
       bestStreak: Math.max(previous.bestStreak, streak),
+      // 没报失误数就不写：宁可留着上一次的真实值，也不写一个假的 0
+      lastMistakes: suppliedMistakes === undefined ? previous.lastMistakes : mistakes,
     };
 
     const pet: PetState = {
@@ -263,6 +333,7 @@ export class ProgressManager {
       fragments: data.pet.fragments + fragments,
       stats: applyStatDelta(data.pet.stats, statsDeltaFor(task, firstToday)),
       stickers: sticker ? [...data.pet.stickers, task.id] : data.pet.stickers,
+      totalCompletions,
     };
 
     const nextDay: DayRecord = {
@@ -296,6 +367,11 @@ export class ProgressManager {
       fragments,
       sticker,
       arcadeUnlocked: !arcadeWasUnlocked && isArcadeUnlocked(nextDay),
+      mistakes,
+      better,
+      harvest: multiplier === 2,
+      totalCompletions,
+      milestone,
     };
   }
 
@@ -428,6 +504,34 @@ export class ProgressManager {
     return { ok: true, feeds: pet.feeds };
   }
 
+  /**
+   * 请小鸟吃一根竹笋（P1-5 竹笋消耗出口）：只扣竹笋、记次数，不给经验/状态增益，
+   * 也不碰任务统计与连续天数 —— 竹笋有地方花，但经济不会因此崩。
+   *
+   * 判定在 rewards.feedBird（纯函数，竹笋不够就不扣），这里只负责
+   * `await this.ready()` 与「判定即落档」：拒绝时不写盘。
+   */
+  async feedBird(now = this.clock()): Promise<BirdFeedOutcome> {
+    await this.ready();
+    const result = feedBirdPure(this.data.pet);
+    if (!result.ok) {
+      return {
+        ok: false,
+        reason: 'noShoots',
+        shoots: this.data.pet.shoots,
+        birdFeeds: this.data.pet.birdFeeds,
+        spent: 0,
+      };
+    }
+    const pet: PetState = {
+      ...this.data.pet,
+      shoots: result.shoots,
+      birdFeeds: result.birdFeeds,
+    };
+    await this.commit({ ...this.data, updatedAt: now, pet });
+    return result;
+  }
+
   /** 解锁：先看阶段，再看竹笋/碎片；解锁后自动穿上（少一步操作，孩子更顺） */
   async unlock(itemId: string, now = this.clock()): Promise<UnlockOutcome> {
     await this.ready();
@@ -489,6 +593,7 @@ export class ProgressManager {
     await this.commit(next);
   }
 
+  /** 20 分钟休息提醒今天已经收起（一天只提醒一次） */
   async dismissRest(now = this.clock()): Promise<void> {
     await this.ready();
     const today = dayKey(now);
@@ -499,6 +604,24 @@ export class ProgressManager {
       ...data,
       updatedAt: now,
       days: { ...data.days, [today]: { ...day, restDismissed: true } },
+    };
+    await this.commit(next);
+  }
+
+  /**
+   * 30 分钟「玩够啦」收尾卡片今天已经收下：只写一个布尔值，不锁任何功能。
+   * 与 20 分钟提醒是两张独立的卡片（各收各的），当天都不再出现，跨天自动重置。
+   */
+  async dismissRestWrap(now = this.clock()): Promise<void> {
+    await this.ready();
+    const today = dayKey(now);
+    const data = ensureDay(this.data, now);
+    const day = data.days[today] ?? emptyDay(today);
+    if (day.restWrapDismissed) return;
+    const next: SaveData = {
+      ...data,
+      updatedAt: now,
+      days: { ...data.days, [today]: { ...day, restWrapDismissed: true } },
     };
     await this.commit(next);
   }

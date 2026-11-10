@@ -60,5 +60,66 @@
         "answer": 1
       }
     ]
-  }
+  },
+  "variants": [
+    {
+      "room": "classroom",
+      "rounds": [
+        {
+          "kind": "color",
+          "question": "哪一个是蓝色的？",
+          "options": [
+            {
+              "label": "红",
+              "color": "#e07a6a"
+            },
+            {
+              "label": "黄",
+              "color": "#f2c14e"
+            },
+            {
+              "label": "蓝",
+              "color": "#5d8fbf"
+            }
+          ],
+          "answer": 2
+        },
+        {
+          "kind": "shape",
+          "question": "哪一个是五角星？",
+          "options": [
+            {
+              "label": "心",
+              "shape": "heart"
+            },
+            {
+              "label": "星",
+              "shape": "star"
+            },
+            {
+              "label": "圆",
+              "shape": "circle"
+            }
+          ],
+          "answer": 1
+        },
+        {
+          "kind": "number",
+          "question": "哪一张卡片上是 6？",
+          "options": [
+            {
+              "label": "6"
+            },
+            {
+              "label": "4"
+            },
+            {
+              "label": "8"
+            }
+          ],
+          "answer": 0
+        }
+      ]
+    }
+  ]
 }

@@ -54,5 +54,60 @@
       "kind": "rinse",
       "taps": 6
     }
-  }
+  },
+  "variants": [
+    {
+      "room": "sink",
+      "tool": "hands",
+      "rubs": 2,
+      "spots": [
+        {
+          "id": "c1",
+          "x": 0.3,
+          "y": 0.2,
+          "size": 1.1,
+          "kind": "foam"
+        },
+        {
+          "id": "c2",
+          "x": 0.56,
+          "y": 0.16,
+          "size": 0.9,
+          "kind": "foam"
+        },
+        {
+          "id": "c3",
+          "x": 0.78,
+          "y": 0.26,
+          "size": 1,
+          "kind": "foam"
+        },
+        {
+          "id": "c4",
+          "x": 0.24,
+          "y": 0.5,
+          "size": 0.85,
+          "kind": "foam"
+        },
+        {
+          "id": "c5",
+          "x": 0.5,
+          "y": 0.56,
+          "size": 1.2,
+          "kind": "foam"
+        },
+        {
+          "id": "c6",
+          "x": 0.76,
+          "y": 0.5,
+          "size": 0.9,
+          "kind": "foam"
+        }
+      ],
+      "finish": {
+        "kind": "rinse",
+        "taps": 4
+      }
+    }
+  ]
 }

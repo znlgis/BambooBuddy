@@ -68,5 +68,67 @@
       "kind": "wipe",
       "taps": 5
     }
-  }
+  },
+  "variants": [
+    {
+      "room": "bathroom",
+      "tool": "sponge",
+      "rubs": 2,
+      "spots": [
+        {
+          "id": "q1",
+          "x": 0.24,
+          "y": 0.22,
+          "size": 1,
+          "kind": "dirt"
+        },
+        {
+          "id": "q2",
+          "x": 0.5,
+          "y": 0.14,
+          "size": 1.1,
+          "kind": "dirt"
+        },
+        {
+          "id": "q3",
+          "x": 0.76,
+          "y": 0.22,
+          "size": 0.9,
+          "kind": "dirt"
+        },
+        {
+          "id": "q4",
+          "x": 0.2,
+          "y": 0.46,
+          "size": 0.85,
+          "kind": "dirt"
+        },
+        {
+          "id": "q5",
+          "x": 0.5,
+          "y": 0.5,
+          "size": 1.2,
+          "kind": "dirt"
+        },
+        {
+          "id": "q6",
+          "x": 0.8,
+          "y": 0.46,
+          "size": 1,
+          "kind": "dirt"
+        },
+        {
+          "id": "q7",
+          "x": 0.4,
+          "y": 0.74,
+          "size": 0.9,
+          "kind": "dirt"
+        }
+      ],
+      "finish": {
+        "kind": "wipe",
+        "taps": 4
+      }
+    }
+  ]
 }

@@ -20,6 +20,11 @@ export interface ContentTask {
   readonly id: string;
   readonly template: TemplateId;
   readonly levelScript: unknown;
+  /**
+   * 第 2 套及以后的关卡脚本（可选；levelScript 是第 1 套）。
+   * 旧内容不写这个字段也合法 —— 只是新标准要求每条任务至少 2 套。
+   */
+  readonly variants?: readonly unknown[];
 }
 
 /** 带文案的任务（banned words / 中文残留检查用） */
@@ -47,31 +52,29 @@ function asRecord(value: unknown): ScriptBase {
   return value as ScriptBase;
 }
 
-/**
- * 校验一条任务的关卡脚本：先跑模板 schema（形状），再跑模板专属语义规则。
- * 返回的每条字符串都是一条「人能读、能定位」的问题描述。
- */
-export function checkLevelScript(task: ContentTask, locale: Locale): string[] {
-  const sources = templateSchemas[task.template];
-  if (!sources) {
-    return [`${task.id} 的模板没有登记 schema：${task.template}`];
-  }
-  const parsed = sources.safeParse(task.levelScript);
-  if (!parsed.success) {
-    return parsed.error.issues.map(
-      (issue) =>
-        `${task.id}（${locale}）/ ${task.template} 脚本 ` +
-        `${issue.path.join('.') || '(根)'}：${issue.message}`,
+/** 一条任务的全部关卡：levelScript 是第 1 套，variants 依次追加 */
+function allScripts(task: ContentTask): readonly unknown[] {
+  return [task.levelScript, ...(task.variants ?? [])];
+}
+
+/** 键排序后的稳定 JSON：用来判断两套关卡是不是"一模一样"（与属性书写顺序无关） */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    return (
+      '{' +
+      entries.map(([key, item]) => JSON.stringify(key) + ':' + canonicalJson(item)).join(',') +
+      '}'
     );
   }
+  return JSON.stringify(value) ?? 'null';
+}
 
-  // 模板之间的语义约束（schema 只管形状，这里管"这一关讲不讲得通"）
-  const issues: string[] = [];
-  const script = asRecord(parsed.data);
-  const push = (message: string): void => {
-    issues.push(`${task.id}（${locale}）/ ${task.template}：${message}`);
-  };
-
+/** 模板之间的语义约束（schema 只管形状，这里管"这一关讲不讲得通"） */
+function semanticIssues(task: ContentTask, script: ScriptBase, push: (message: string) => void): void {
   if (task.template === 'feed') {
     const foods = script.foods as { kind: string }[];
     const needs = script.needKinds as string[];
@@ -135,6 +138,80 @@ export function checkLevelScript(task: ContentTask, locale: Locale): string[] {
     const spots = script.spots as { id: string }[];
     if (new Set(spots.map((spot) => spot.id)).size !== spots.length) {
       push('刷洗点的 id 重复');
+    }
+  }
+}
+
+/**
+ * 校验一套关卡脚本：先跑模板 schema（形状），再跑模板专属语义规则。
+ * label 为空 = 第 1 套（保持旧报错文案不变）；变体传 " 第2套" 之类的前缀。
+ */
+function checkScript(task: ContentTask, script: unknown, locale: Locale, label: string): string[] {
+  const sources = templateSchemas[task.template];
+  if (!sources) {
+    return [`${task.id} 的模板没有登记 schema：${task.template}`];
+  }
+  const parsed = sources.safeParse(script);
+  if (!parsed.success) {
+    return parsed.error.issues.map(
+      (issue) =>
+        `${task.id}（${locale}）/ ${task.template}${label} 脚本 ` +
+        `${issue.path.join('.') || '(根)'}：${issue.message}`,
+    );
+  }
+
+  const issues: string[] = [];
+  semanticIssues(task, asRecord(parsed.data), (message) => {
+    issues.push(`${task.id}（${locale}）/ ${task.template}${label}：${message}`);
+  });
+  return issues;
+}
+
+/** 校验第 1 套关卡（保持旧签名与旧报错文案） */
+export function checkLevelScript(task: ContentTask, locale: Locale): string[] {
+  return checkScript(task, task.levelScript, locale, '');
+}
+
+/**
+ * 校验第 2 套及以后的关卡：
+ * - 每一套都要过 schema + 语义规则（与第 1 套同一套标准）；
+ * - 两套不能完全相同（否则"变体"没有意义，孩子会连着两天玩到一样的）；
+ * - 英文变体不得残留中文（漏翻）；
+ * - 每条任务至少 2 套（新内容标准：同一天与不同天要有变化）。
+ */
+export function checkLevelVariants(task: ContentTask, locale: Locale): string[] {
+  const scripts = allScripts(task);
+  const issues: string[] = [];
+
+  if (scripts.length < 2) {
+    issues.push(`${task.id}（${locale}）只有 ${scripts.length} 套关卡（每条任务至少 2 套）`);
+  }
+
+  for (let index = 1; index < scripts.length; index += 1) {
+    issues.push(...checkScript(task, scripts[index], locale, ` 第${index + 1}套`));
+  }
+
+  const seen = new Map<string, number>();
+  for (const [index, script] of scripts.entries()) {
+    const key = canonicalJson(script);
+    const previous = seen.get(key);
+    if (previous !== undefined) {
+      issues.push(
+        `${task.id}（${locale}）第 ${previous + 1} 套与第 ${index + 1} 套关卡完全相同（变体要不一样）`,
+      );
+    } else {
+      seen.set(key, index);
+    }
+  }
+
+  if (locale === 'en') {
+    for (let index = 1; index < scripts.length; index += 1) {
+      const leaks = findCjk(scripts[index]);
+      if (leaks.length > 0) {
+        issues.push(
+          `${task.id}（en）第 ${index + 1} 套关卡里还有中文：${leaks.join('、')}`,
+        );
+      }
     }
   }
 
@@ -203,8 +280,15 @@ export function checkInventory(
   const zhById = new Map(tasks.map((task) => [task.id, task]));
   for (const task of tasksEn) {
     const zh = zhById.get(task.id);
-    if (zh !== undefined && zh.title === task.title) {
+    if (zh === undefined) continue;
+    if (zh.title === task.title) {
       issues.push(`${task.id} 的英文标题与中文相同（疑似漏翻）`);
+    }
+    // 中英关卡套数必须一致：否则英文孩子可能永远落在同一套上
+    const zhCount = allScripts(zh).length;
+    const enCount = allScripts(task).length;
+    if (zhCount !== enCount) {
+      issues.push(`${task.id} 的中英关卡套数不一致：中文 ${zhCount} 套，英文 ${enCount} 套`);
     }
   }
 

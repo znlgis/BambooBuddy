@@ -19,3 +19,4 @@ export {
   allTaskIds,
 } from './tasks';
 export { loadTask } from './loadTask';
+export type { LoadTaskOptions, VariantSource } from './loadTask';

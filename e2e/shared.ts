@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test';
 import type { Locator, Page, PlaywrightTestConfig } from '@playwright/test';
 import type { SaveData } from '../packages/game-kit/src/contract';
 import { TASK_IDS } from '../packages/content/src/ids';
@@ -241,6 +242,51 @@ export async function longPress(page: Page, locator: Locator, ms = 3200): Promis
   await page.mouse.down();
   await page.waitForTimeout(ms);
   await page.mouse.up();
+}
+
+/* ------------------------------------------------------------------ *
+ * 成人门（家长页入口与清档共用）
+ *
+ * 家长页里放着"清除本机存档"，只靠长按对 4–8 岁太容易（他们学得会）：
+ * 现在长按标题 3 秒只会弹出成人门，答对一道两位数加法才发一次性令牌进家长页；
+ * 清档按钮同样是"点一下 → 过门 → 再按住 3 秒"。
+ *
+ * 题目文本随语言变化（"请家长算一算：12 + 34 = ?" / "For grown-ups: 12 + 34 = ?"），
+ * 但算式本身两种语言一致，所以从 data-testid=adult-gate 的文本里抓两个加数。
+ * 抓不到就显式失败并带上整段门文本——文案一改，用例报告里一眼能看出改成了什么，
+ * 不会静默点空继续跑出假绿。
+ * ------------------------------------------------------------------ */
+
+const ADULT_GATE = '[data-testid="adult-gate"]:visible';
+
+/** 通过当前弹出的成人门（家长页入口与清档门是同一个组件） */
+export async function passAdultGate(page: Page): Promise<void> {
+  const gate = page.locator(ADULT_GATE).first();
+  await expect(gate).toBeVisible({ timeout: 15_000 });
+  const text = await gate.innerText();
+  const match = /(\d+)\s*\+\s*(\d+)\s*=/.exec(text);
+  if (!match) {
+    throw new Error('成人门里找不到形如 "12 + 34 = ?" 的算式，无法自动通过；门文本：' + text);
+  }
+  const answer = Number(match[1]) + Number(match[2]);
+  await page.getByTestId('adult-gate-input').fill(String(answer));
+  await page.getByTestId('adult-gate-submit').click();
+  // 答对后门会删掉（v-if=false），toBeHidden 对 detached 元素同样成立
+  await expect(gate).toBeHidden({ timeout: 15_000 });
+}
+
+/**
+ * 长按标题 3 秒 → 过成人门 → 进家长页。
+ *
+ * 注意：长按只会"叫出题目"，不会直接进页；这是 P0-6 的成人门（Apple Kids 类目要求的
+ * adult-level task），所以家长页相关的用例都必须走这里，不能再用裸 longPress。
+ */
+export async function enterParent(page: Page): Promise<void> {
+  await longPress(page, page.getByTestId('app-title'), 3200);
+  await passAdultGate(page);
+  await expect(page.locator('[data-testid="parent-view"]:visible').first()).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 /* ------------------------------------------------------------------ *

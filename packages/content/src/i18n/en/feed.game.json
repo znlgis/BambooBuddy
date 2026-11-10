@@ -54,5 +54,67 @@
         "y": 0.86
       }
     ]
-  }
+  },
+  "variants": [
+    {
+      "room": "kitchen",
+      "needKinds": [
+        "bamboo",
+        "veg",
+        "protein",
+        "grain"
+      ],
+      "foods": [
+        {
+          "id": "bamboo",
+          "kind": "bamboo",
+          "bites": 1,
+          "x": 0.16,
+          "y": 0.32
+        },
+        {
+          "id": "broccoli",
+          "kind": "veg",
+          "bites": 2,
+          "x": 0.4,
+          "y": 0.34
+        },
+        {
+          "id": "egg",
+          "kind": "protein",
+          "bites": 2,
+          "x": 0.64,
+          "y": 0.3
+        },
+        {
+          "id": "noodles",
+          "kind": "grain",
+          "bites": 2,
+          "x": 0.18,
+          "y": 0.7
+        },
+        {
+          "id": "banana",
+          "kind": "fruit",
+          "bites": 1,
+          "x": 0.42,
+          "y": 0.68
+        },
+        {
+          "id": "fish",
+          "kind": "protein",
+          "bites": 1,
+          "x": 0.7,
+          "y": 0.66
+        },
+        {
+          "id": "cookie",
+          "kind": "snack",
+          "bites": 1,
+          "x": 0.88,
+          "y": 0.46
+        }
+      ]
+    }
+  ]
 }

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { getTaskSummary } from '@bamboo/content';
+import type { TaskId } from '@bamboo/content';
 import { weekCompletedCount } from '@bamboo/progress';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import sitePkg from '../../package.json';
+import AdultGate from '../components/AdultGate.vue';
 import { navigate } from '../router';
 import { platform } from '../shell/platform';
 import { useI18n } from '../shell/useI18n';
+import { suggestForToday } from '../logic/parentSuggest';
 import { useProgress } from '../stores/progress';
 import { useSettings } from '../stores/settings';
 
@@ -25,6 +28,20 @@ const { t, locale } = useI18n();
 const version = (sitePkg as { version?: string }).version ?? '0.0.0';
 
 const weekCount = computed(() => weekCompletedCount(progress.save, progress.now));
+
+/** 今天/本周的游戏内前台时长（分钟）：数据一直在采集，以前只是没地方看 */
+const todayMinutes = computed(() => Math.round(progress.todaySeconds / 60));
+const weekMinutes = computed(() =>
+  Math.round(progress.weekSummary.reduce((sum, day) => sum + day.seconds, 0) / 60),
+);
+
+/** 今天可以和孩子一起做的一件事：从今天玩过的任务反推一句可执行建议 */
+const suggestion = computed(() => suggestForToday(progress.todayRecord.completed as readonly TaskId[]));
+/** 今天没玩过时给一句通用邀请，卡片不消失（家长页不能出现一块空白） */
+const suggestionKey = computed(() => suggestion.value ?? 'parent.suggest.none');
+
+/** 今天完成了多少件不同的小事（家长需要知道"今天的份量"） */
+const todayDone = computed(() => progress.todayRecord.completed.length);
 
 /** 今天玩了几局隐藏小游戏（只读本机存档；家长想知道时间花在哪） */
 const todayArcade = computed(() => progress.todayRecord.arcadePlays);
@@ -55,6 +72,24 @@ const holdProgress = ref(0);
 const cleared = ref(false);
 /** 清档失败要说出来：家长以为已经清掉、其实还在，是最不该发生的事 */
 const clearFailed = ref(false);
+/** 清档是破坏性操作：先过成人门，再长按（长按对 4–8 岁太容易学会） */
+const clearGateOpen = ref(false);
+const clearGateQuestion = ref('');
+const clearGateAnswer = ref(0);
+
+function askClearGate(): void {
+  if (cleared.value || ticker !== null) return;
+  const a = 12 + Math.floor(Math.random() * 78);
+  const b = 11 + Math.floor(Math.random() * 78);
+  clearGateQuestion.value = a + ' + ' + b + ' = ?';
+  clearGateAnswer.value = a + b;
+  clearGateOpen.value = true;
+}
+
+function onClearGatePass(): void {
+  clearGateOpen.value = false;
+  startHold();
+}
 let ticker: ReturnType<typeof setInterval> | null = null;
 let startedAt = 0;
 let holdRect: DOMRect | null = null;
@@ -110,7 +145,7 @@ function onHoldPointerDown(event: PointerEvent): void {
   if (cleared.value) return;
   const target = event.currentTarget;
   holdRect = target instanceof HTMLElement ? target.getBoundingClientRect() : null;
-  startHold();
+  askClearGate();
 }
 
 /**
@@ -146,7 +181,39 @@ onBeforeUnmount(stopHold);
         <li class="rounded-2xl bg-card px-4 py-3 text-ink">✅ {{ t('parent.noNetwork') }}</li>
         <li class="rounded-2xl bg-card px-4 py-3 text-ink">✅ {{ t('parent.noAds') }}</li>
         <li class="rounded-2xl bg-card px-4 py-3 text-ink">✅ {{ t('parent.local') }}</li>
+        <li data-testid="parent-age" class="rounded-2xl bg-card px-4 py-3 text-ink">🎋 {{ t('parent.age') }}</li>
       </ul>
+
+      <!-- 零收集隐私说明：商店页与家长页同一份口径（P0-7） -->
+      <details data-testid="parent-privacy" class="mt-4 rounded-3xl border-2 border-cream bg-card px-4 py-3">
+        <summary class="cursor-pointer text-base font-bold text-bamboo-deep">{{ t('parent.privacyTitle') }}</summary>
+        <p class="mt-2 text-base leading-relaxed text-ink">{{ t('parent.privacyBody') }}</p>
+        <p class="mt-1 text-base text-gold">{{ t('parent.privacyClear') }}</p>
+      </details>
+
+      <!-- 今天的份量与屏幕时间：家长最关心的两个数，全部来自本机存档 -->
+      <div data-testid="parent-time" class="mt-5 rounded-3xl border-2 border-cream bg-card p-4">
+        <p class="text-base font-bold text-bamboo-deep">
+          {{ todayMinutes > 0 ? t('parent.timeToday', { n: todayMinutes }) : t('parent.timeNone') }}
+        </p>
+        <p data-testid="parent-time-week" class="mt-1 text-base text-ink">
+          {{ t('parent.timeWeek', { n: weekMinutes }) }}
+        </p>
+        <p data-testid="parent-today-count" class="mt-1 text-base text-ink">
+          {{ t('parent.todayDone', { n: todayDone }) }}
+        </p>
+        <!-- 累计里程碑：跨任务、跨天、只增不减（不展示"连续"与"断签"） -->
+        <p data-testid="parent-milestone" class="mt-1 text-base text-ink">
+          🌱 {{ t('parent.milestone', { n: progress.totalCompletions }) }}
+        </p>
+        <p class="mt-2 text-base text-inksoft">{{ t('parent.timeHint') }}</p>
+      </div>
+
+      <!-- 亲子建议：家长页从"查看"变成"可以做什么" -->
+      <div data-testid="parent-suggest" class="mt-4 rounded-3xl border-2 border-bamboo bg-mint p-4">
+        <p class="text-base font-bold text-bamboo-deep">💡 {{ t('parent.suggestTitle') }}</p>
+        <p class="mt-1 text-base leading-relaxed text-ink">{{ t(suggestionKey) }}</p>
+      </div>
 
       <div class="mt-5 rounded-3xl border-2 border-cream bg-card p-4">
         <p data-testid="parent-week" class="text-base font-bold text-bamboo-deep">
@@ -220,5 +287,13 @@ onBeforeUnmount(stopHold);
         {{ t('parent.back') }}
       </button>
     </div>
+
+    <AdultGate
+      v-if="clearGateOpen"
+      :question="clearGateQuestion"
+      :answer="clearGateAnswer"
+      @pass="onClearGatePass"
+      @cancel="clearGateOpen = false"
+    />
   </section>
 </template>

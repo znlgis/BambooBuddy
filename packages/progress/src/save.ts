@@ -18,6 +18,12 @@ type Raw = Record<string, unknown>;
 
 export const MAX_DAYS = 30;
 
+/**
+ * 失误数的存档封顶：一局现实里不可能错这么多次，坏档或异常事件夹到 99。
+ * 这不是惩罚（星星规则只看 0–3 次的门槛），只是不让脏数据把数字撑爆。
+ */
+export const MAX_STORED_MISTAKES = 99;
+
 function isRecord(value: unknown): value is Raw {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -102,6 +108,8 @@ export function emptyPet(now: number): PetState {
     equipped: defaults.equipped,
     room: defaults.room,
     feeds: 0,
+    totalCompletions: 0,
+    birdFeeds: 0,
   };
 }
 
@@ -114,6 +122,7 @@ export function emptyTaskProgress(taskId: TaskId): TaskProgress {
     lastCompletedDay: null,
     streak: 0,
     bestStreak: 0,
+    lastMistakes: 0,
   };
 }
 
@@ -126,6 +135,7 @@ export function emptyDay(date: string): DayRecord {
     care: [],
     seconds: 0,
     restDismissed: false,
+    restWrapDismissed: false,
     arcade: [],
     arcadePlays: 0,
     arcadeSecret: false,
@@ -249,6 +259,9 @@ function sanitizePet(value: unknown, now: number): PetState {
     equipped,
     room,
     feeds: positiveInt(value.feeds),
+    // v5：缺字段（v4 及更老）由 positiveInt 兜底成 0；真正的累计数在 migrate 里用任务次数之和回填
+    totalCompletions: positiveInt(value.totalCompletions),
+    birdFeeds: positiveInt(value.birdFeeds),
   };
 }
 
@@ -292,6 +305,8 @@ function sanitizeTasks(value: unknown): Record<TaskId, TaskProgress> {
           : null,
       streak: positiveInt(raw.streak),
       bestStreak: positiveInt(raw.bestStreak),
+      // v5：v4 及更老没有这一项 → 0（"上次没有失误记录"，第一次完成不会硬夸"进步"）
+      lastMistakes: intInRange(raw.lastMistakes, 0, MAX_STORED_MISTAKES, 0),
     };
   }
   return out;
@@ -315,6 +330,8 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
       care: uniqueCares(raw.care),
       seconds: positiveInt(raw.seconds),
       restDismissed: raw.restDismissed === true,
+      // v5：老档没有这一项 → false（收尾卡片照常可以出现一次）
+      restWrapDismissed: raw.restWrapDismissed === true,
       arcade: uniqueArcadeIds(raw.arcade),
       // v3 及更老：没有 arcadePlays，按「今天玩过几款」兜底（旧规则每款每天一次，正好等于局数）
       arcadePlays: positiveInt(raw.arcadePlays, uniqueArcadeIds(raw.arcade).length),
@@ -322,6 +339,13 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
     };
   }
   return days;
+}
+
+/** 各任务完成次数之和：v5 之前没有 pet.totalCompletions 时的回填口径（重复玩也算一件小事） */
+function totalTaskCompletions(tasks: Record<TaskId, TaskProgress>): number {
+  let sum = 0;
+  for (const task of Object.values(tasks)) sum += task.completions;
+  return sum;
 }
 
 /**
@@ -335,6 +359,9 @@ const MIGRATIONS: Record<number, (raw: Raw, now: number) => Raw> = {
   2: (raw) => raw,
   // v3 → v4：只新增「今天已经玩了几局」的计数；缺的字段由 sanitize 按旧规则兜底
   3: (raw) => raw,
+  // v4 → v5：新增累计完成件数 / 喂小鸟次数 / 上一次失误 / 收尾卡片标记；
+  // 缺的字段由 sanitize 兜底，累计完成件数在 migrate 末尾用各任务 completions 之和回填
+  4: (raw) => raw,
 };
 
 /**
@@ -375,13 +402,20 @@ export function migrate(raw: unknown, now: number): SaveData {
     data = step(data, now);
   }
 
-  const pet = sanitizePet(data.pet, now);
   const tasks = sanitizeTasks(data.tasks);
   const arcade = sanitizeArcade(data.arcade);
   const days = sanitizeDays(data.days);
   const today = dayKey(now);
   // 至少要有今天这一条：日记录是日记与家长页的共同来源
   if (!days[today]) days[today] = emptyDay(today);
+
+  // v5：v4 及更老没有 pet.totalCompletions，用各任务完成次数之和回填 —— 老玩家的累计数不从 0 重来。
+  // 两者取大：即使字段还在、却比任务次数之和小（坏档/手工改档），也不让累计数倒退。
+  const sanitizedPet = sanitizePet(data.pet, now);
+  const pet: PetState = {
+    ...sanitizedPet,
+    totalCompletions: Math.max(sanitizedPet.totalCompletions, totalTaskCompletions(tasks)),
+  };
 
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,

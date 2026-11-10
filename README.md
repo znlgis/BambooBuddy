@@ -91,6 +91,14 @@ git tag v0.2.0 && git push origin v0.2.0
 | 情感设计 | 全局 | 竹竹叫玩家「小伙伴」；做对鼓掌冒星星；做错只说"再试一次"，无失败音效；每天固定的亲近动作 |
 | 中英文双语 | `packages/i18n` + `packages/content/src/i18n/en` | 界面文案、任务标题/习惯/日记、玩法语音与关卡文案全部双语；`?lang=en` 或头部语言按钮切换，选择记在 `localStorage`；英文文案是懒加载 chunk，中文用户不下载 |
 | 隐藏小游戏 | `games/arcade` + `apps/site/src/views/Arcade*.vue` | 完成当天四件小事后，小屋出现「竹林小门」；三款经典微信小游戏按 4–8 岁重做（消灭星星 / 弹一弹 / 俄罗斯方块），普通模式每天最多 21 局（三款合计），次日局数归零、难度与最高分延续，无限畅玩不限局；无失败、无奖励、无内购 |
+| 每日份量与丰收日 | `HomeView` / `ProgressManager` | 小屋明示"今日小事 n 件、已完成 m 件"；**每周六**是丰收日（竹笋 ×2，成长值不翻）；30 分钟给一张"玩够啦"收尾卡片（不锁不惩罚） |
+| 累计里程碑 | `packages/progress/src/catalog.ts` | 按**累计**件数 1/5/10/20/30/50 解锁里程碑，只增不减；断签不清零、不提示 |
+| 竹笋小卖部 | `HomeExtras.vue` + `rewards.feedBird` | 花 1 根竹笋请小鸟，只给动画与计数，不给数值增益（避免经济崩） |
+| 进步反馈 | `rewards.progressFor` | 完成卡只在"比上次少错"时夸一句；持平或更差都不显示，不做退步羞辱 |
+| 关卡变体 | `content/details/*.game.json` 的 `variants` | 每条任务 2 套关卡，按"这个任务做过几次"确定性轮换（第 1 次第 1 套、第 2 次换一套），不改玩法代码 |
+| 形象化进度 | `templates/*.logic.ts` 的 `stepProgress` | 穿衣/睡前/整理显示"第 n 步 / 共 m 步"，不用倒计时施压 |
+| 家长门 | `AdultGate.vue` | 长按标题 3 秒 → **两位加法**（成人级任务）→ 才进家长页；清档同样过门，连错 3 次锁 30 秒 |
+| 家长价值 | `ParentView.vue` + `logic/parentSuggest.ts` | 今天/本周游戏时长、今日完成件数、累计里程碑、每日一句可执行的亲子建议、零收集隐私说明、适合 4–8 岁标注 |
 
 ### 十个玩法与八个模板
 
@@ -235,9 +243,9 @@ export default defineGame({
 
 | 预算项 | 上限 |
 |---|---|
-| 首屏 JS + CSS（gzip） | ≤ 60 KB（不含 Phaser；实测 59.4 KB，原始 172.3 KB —— 余量只有 0.6 KB，新增首屏代码前先看这里） |
+| 首屏 JS + CSS（gzip） | ≤ 60 KB（不含 Phaser；实测 60.0 KB，原始 170.6 KB —— **已顶到线**：任务页 / 彩蛋浮层 / 小屋扩展块 / 懒加载页面中文文案都已拆出首屏，再往首屏加东西必须先腾空间） |
 | 单个懒加载 js/css（gzip） | ≤ 260 KB（Phaser 裁剪版实测 220.6 KB / 856.3 KB 原始） |
-| dist 原始大小 | ≤ 2400 KB（实测 1290 KB） |
+| dist 原始大小 | ≤ 2400 KB（实测 1320.7 KB / 62 个文件） |
 | 单个非代码资源 | ≤ 200 KB |
 | 非代码资源合计 | ≤ 600 KB（当前是 0：全部几何绘制 + WebAudio 合成） |
 
@@ -245,8 +253,8 @@ export default defineGame({
 
 ### 最近一次验收
 
-- `pnpm verify`：typecheck / lint / **243 个单测** / content:check（中英各 10 条 + 关卡脚本 + 零漏翻）/ **pack:check** / build / size 全绿。
-- `pnpm e2e`：**34 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长锁（长按进入 / 后退与直链被拒）与清档、刷新后进度保留、中英文切换与英文玩法、隐藏小游戏每日 21 局与难度。
+- `pnpm verify`：typecheck / lint / **321 个单测** / content:check（中英各 10 条 × 2 套关卡 + 语义规则 + 零漏翻）/ **pack:check** / build / size 全绿。
+- `pnpm e2e`：**38 passed / 2 skipped / 0 failed**（skipped 是 preview 用例在 dev 配置下的预期跳过）——10 个玩法 autoplay 全通关、刷牙/整理/睡觉三条真实指针链路、家长门（长按 → 成人算术门 → 进入 / 后退与直链被拒）与清档、成人门连错 3 次锁定、装扮扣费、日记朗读、家长页时长、刷新后进度保留、中英文切换与英文玩法、隐藏小游戏每日 21 局与难度。
 - `pnpm e2e:dist`：生产产物 **2 passed**——首屏不下载任何重 chunk、10 个玩法各自懒加载、Phaser 只在首个玩法时加载。
 - GitHub Actions：**Release** 手动运行全绿（web / e2e / windows / android 四个 job），产出 EXE 3.27 MB、APK 4.69 MB；推 `v*` tag 会自动挂到 Release。
 

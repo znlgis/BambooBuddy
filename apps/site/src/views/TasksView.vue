@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { taskSummaries } from '@bamboo/content';
 import type { TaskId } from '@bamboo/content';
-import { currentSlot, dayKey, recommendedTasks } from '@bamboo/progress';
+import { DAILY_TASK_TARGET, currentSlot, dayKey, recommendedTasks } from '@bamboo/progress';
 import { SLOT_LABEL_KEYS } from '../logic/labels';
 import { groupTasksBySlot } from '../logic/taskGroups';
 import { navigate } from '../router';
@@ -28,6 +28,9 @@ const slot = computed(() => currentSlot(progress.now));
 const recommended = computed(() => recommendedTasks(dateKey.value, slot.value, tasks.value, 4));
 const groups = computed(() => groupTasksBySlot(tasks.value));
 
+/** 今天已经完成了几件不同的小事（与"今日推荐"同一口径） */
+const doneToday = computed(() => progress.todayRecord.completed.length);
+
 function locked(unlockLevel: number): boolean {
   return unlockLevel > progress.stage.id;
 }
@@ -47,6 +50,10 @@ function starText(taskId: TaskId): string {
 <template>
   <section data-testid="tasks-view" class="mx-auto w-full max-w-xl px-4 pb-10 pt-3">
     <h1 class="text-2xl font-bold text-bamboo-deep">{{ t('tasks.title') }}</h1>
+    <!-- 每日份量明示：4 件小事是今天的全部，不多不少（Lingokids 的做法） -->
+    <p data-testid="tasks-daily-limit" class="mt-1 text-base text-inksoft">
+      {{ t('tasks.dailyLimit', { n: DAILY_TASK_TARGET, done: doneToday }) }}
+    </p>
 
     <!-- 今日推荐 -->
     <section data-testid="tasks-today" class="mt-4">
@@ -99,6 +106,13 @@ function starText(taskId: TaskId): string {
                     :aria-label="t('complete.stars', { n: progress.starsFor(task.id) })"
                   >
                     {{ starText(task.id) }}
+                  </span>
+                  <span
+                    v-if="progress.completionsFor(task.id) > 0"
+                    :data-testid="'task-completions-' + task.id"
+                    class="rounded-full bg-cream px-2 py-0.5 text-inksoft"
+                  >
+                    {{ t('tasks.completions', { n: progress.completionsFor(task.id) }) }}
                   </span>
                   <span
                     v-if="progress.streakFor(task.id) > 0"

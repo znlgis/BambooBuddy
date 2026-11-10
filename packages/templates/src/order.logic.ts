@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { ORDER_ICONS, ROOMS } from './common';
+import { stepProgressOf } from './layout';
+import type { StepProgress } from './layout';
 
 /**
  * 睡前顺序：关灯 / 拉窗帘 / 盖被子 / 拍拍哄睡，要按顺序来。
@@ -47,4 +49,9 @@ export function tapStep(state: OrderState, level: OrderLevel, stepId: string): {
 
 export function orderComplete(state: OrderState, level: OrderLevel): boolean {
   return state.next >= level.steps.length;
+}
+
+/** 步骤进度（数据侧，UI 用它画顶部圆点）：index 从 1 开始，全部做完停在 total */
+export function stepProgress(state: OrderState, level: OrderLevel): StepProgress {
+  return stepProgressOf(state.completed.length, level.steps.length);
 }

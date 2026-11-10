@@ -60,5 +60,66 @@
         "answer": 1
       }
     ]
-  }
+  },
+  "variants": [
+    {
+      "room": "classroom",
+      "rounds": [
+        {
+          "kind": "color",
+          "question": "Which one is blue?",
+          "options": [
+            {
+              "label": "Red",
+              "color": "#e07a6a"
+            },
+            {
+              "label": "Yellow",
+              "color": "#f2c14e"
+            },
+            {
+              "label": "Blue",
+              "color": "#5d8fbf"
+            }
+          ],
+          "answer": 2
+        },
+        {
+          "kind": "shape",
+          "question": "Which one is a star?",
+          "options": [
+            {
+              "label": "Heart",
+              "shape": "heart"
+            },
+            {
+              "label": "Star",
+              "shape": "star"
+            },
+            {
+              "label": "Circle",
+              "shape": "circle"
+            }
+          ],
+          "answer": 1
+        },
+        {
+          "kind": "number",
+          "question": "Which card shows 6?",
+          "options": [
+            {
+              "label": "6"
+            },
+            {
+              "label": "4"
+            },
+            {
+              "label": "8"
+            }
+          ],
+          "answer": 0
+        }
+      ]
+    }
+  ]
 }

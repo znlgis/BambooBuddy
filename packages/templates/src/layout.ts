@@ -84,6 +84,48 @@ export const COMPLETE_LAYOUT = {
   replay: { x: 225, y: 1093 },
 } as const;
 
+/**
+ * 步骤进度：给「第几步 / 共几步」用的数据形状。
+ * index 从 1 开始 = 正在做第几步；全部做完也停在 total，圆点行不会越界。
+ */
+export interface StepProgress {
+  index: number;
+  total: number;
+}
+
+/**
+ * 顶部步骤进度点的几何常量（order / dress / tidy 共用）。
+ * 场景按这里的数字画，单测与 e2e 可以安全 import（本文件不 import Phaser）。
+ */
+export const STEP_DOTS = {
+  /** 圆点中心 Y */
+  y: 168,
+  /** 相邻圆点间距 */
+  gap: 64,
+  /** 圆点半径 */
+  radius: 13,
+  /** 描边宽度 */
+  outline: 4,
+} as const;
+
+/** 一行 total 个圆点居中时的左端 x（没有圆点时就是屏幕中心） */
+export function stepDotsLeft(total: number, width: number = DESIGN.width): number {
+  if (!Number.isFinite(total) || total <= 0) return width / 2;
+  return width / 2 - ((total - 1) * STEP_DOTS.gap) / 2;
+}
+
+/**
+ * 由「已完成步数 / 总步数」算进度：纯函数，三个模板共用。
+ * 全部做完时 index === total；空关卡返回 { index: 1, total: 0 }。
+ * 非法输入（NaN / 负数 / 超过总数）逐条兜底，绝不把 NaN 画进界面。
+ */
+export function stepProgressOf(done: number, total: number): StepProgress {
+  const safeTotal = Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0;
+  if (safeTotal === 0) return { index: 1, total: 0 };
+  const safeDone = Number.isFinite(done) ? Math.min(Math.max(0, Math.floor(done)), safeTotal) : 0;
+  return { index: Math.min(safeDone + 1, safeTotal), total: safeTotal };
+}
+
 /*
  * 这里原来还有一个 UI 常量（headerH / hintY / buttonH / minTap），全仓库没有任何引用：
  * 场景的按钮尺寸各自写在 addButton(...) 的参数里，可点区域下限由 phaser-kit 的

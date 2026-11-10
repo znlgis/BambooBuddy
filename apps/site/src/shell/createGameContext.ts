@@ -64,8 +64,12 @@ export async function createGameContext(
   hooks: GameHostHooks,
   completedBefore: boolean,
   locale: Locale,
+  /** 这一局用第几套关卡：由外壳按"这个任务做过几次"传入，交给 loadTask 取模选套 */
+  variantIndex = 0,
 ): Promise<GameContext> {
-  const task = await loadTask(manifest.id, locale);
+  // 选套规则在 content 包里（纯函数、可单测）：同一任务第二次玩就换一套点位/顺序，
+  // 第三次再换回来 —— 不用随机数，e2e 与家长复现都稳定。
+  const task = await loadTask(manifest.id, locale, { variantIndex });
   if (!task) throw new Error('找不到玩法内容：' + manifest.id);
 
   return {

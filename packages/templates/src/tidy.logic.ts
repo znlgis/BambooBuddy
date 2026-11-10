@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { hexSchema, normalized, ROOMS, TOY_KINDS } from './common';
+import { stepProgressOf } from './layout';
+import type { StepProgress } from './layout';
 
 /**
  * 整理：把地上的玩具按类别放回箱子（球 / 积木 / 书 / 小车）。
@@ -62,4 +64,10 @@ export function tidyComplete(state: TidyState, level: TidyLevel): boolean {
 
 export function tidyProgress(state: TidyState, level: TidyLevel): number {
   return level.items.length === 0 ? 1 : Object.keys(state.sorted).length / level.items.length;
+}
+
+/** 步骤进度（数据侧，UI 用它画顶部圆点）：index 从 1 开始，全部归位停在 total */
+export function stepProgress(state: TidyState, level: TidyLevel): StepProgress {
+  const done = level.items.filter((item) => state.sorted[item.id] === item.kind).length;
+  return stepProgressOf(done, level.items.length);
 }

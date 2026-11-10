@@ -10,6 +10,8 @@ export interface DetailPatch {
   done?: string;
   retry?: string;
   levelScript?: unknown;
+  /** 英文的第 2 套及以后关卡（与中文 variants 一一对应；content:check 保证中英套数一致） */
+  variants?: unknown[];
 }
 
 export function localizeSummary(summary: TaskSummary, patch: SummaryPatch | undefined): TaskSummary {
@@ -33,13 +35,17 @@ export function mergeTaskDetail(
   patch: DetailPatch | undefined,
 ): TaskDetail {
   if (patch === undefined) return { ...summary, ...extra };
-  return {
+  const merged: TaskDetail = {
     ...summary,
     intro: patch.intro ?? extra.intro,
     done: patch.done ?? extra.done,
     retry: patch.retry ?? extra.retry,
     levelScript: patch.levelScript ?? extra.levelScript,
   };
+  // 英文补丁给了 variants 就用英文的（关卡里的标签 / 题目是英文），否则回落到中文
+  const variants = patch.variants ?? extra.variants;
+  if (variants !== undefined) merged.variants = variants;
+  return merged;
 }
 
 /** 内容体检用：递归找出仍然含中文的字段路径（英文补丁漏翻的守卫） */

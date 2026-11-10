@@ -2,7 +2,7 @@ import type { ClothingSlot, RoomSlot } from '@bamboo/game-kit';
 import type { MessageKey } from '@bamboo/i18n';
 import type { CatalogItem } from '@bamboo/progress';
 import { CLOTHING_SLOTS, ROOM_SLOTS, itemsForSlot } from '@bamboo/progress';
-import { CLOTHING_SLOT_KEYS, ROOM_SLOT_KEYS } from './labels';
+import { CLOTHING_SLOT_KEYS, ROOM_SLOT_KEYS } from './labels-dress';
 
 export type DressTab = 'clothes' | 'room';
 

@@ -26,5 +26,32 @@
         "label": "Pat to sleep"
       }
     ]
-  }
+  },
+  "variants": [
+    {
+      "room": "bedroom",
+      "steps": [
+        {
+          "id": "lamp",
+          "icon": "lamp",
+          "label": "Turn off light"
+        },
+        {
+          "id": "curtain",
+          "icon": "curtain",
+          "label": "Pull curtain"
+        },
+        {
+          "id": "teddy",
+          "icon": "teddy",
+          "label": "Hug teddy"
+        },
+        {
+          "id": "blanket",
+          "icon": "blanket",
+          "label": "Tuck in"
+        }
+      ]
+    }
+  ]
 }

@@ -56,8 +56,8 @@ function showToast(lines: string[]): void {
 }
 
 /** task:complete → 写存档 → 把"竹笋 +n / 碎片 +n / 新贴纸"给出来 */
-async function finishTask(stars: Stars): Promise<void> {
-  const outcome = await progress.completeTask(props.taskId, stars);
+async function finishTask(stars: Stars, mistakes = 0): Promise<void> {
+  const outcome = await progress.completeTask(props.taskId, stars, mistakes);
   if (!outcome) {
     showToast([t('complete.saveWarn')]);
     return;
@@ -70,6 +70,14 @@ async function finishTask(stars: Stars): Promise<void> {
   const lines: string[] = [t('complete.reward', { n: outcome.shoots })];
   if (outcome.fragments > 0) lines.push(t('complete.fragments', { n: outcome.fragments }));
   if (outcome.sticker) lines.push(t('complete.sticker'));
+  // 丰收日只说一句"今天竹笋翻倍"，不额外堆数字
+  if (outcome.harvest) lines.push(t('harvest.title'));
+  // 进步只在"比上次少错"时夸一句：不显示退步
+  if (outcome.better > 0) lines.push(t('complete.better', { n: outcome.better }));
+  // 累计里程碑：孩子第一次看到"我做到第 10 件啦"
+  if (outcome.milestone) {
+    lines.push(t('parent.milestone', { n: outcome.milestone.at }));
+  }
   if (progress.unsaved) lines.push(t('complete.saveWarn'));
   showToast(lines);
   // 第四件小事：奖励照旧，然后多弹出「发现一扇小门」（当天只此一次）
@@ -79,7 +87,7 @@ async function finishTask(stars: Stars): Promise<void> {
 function handleEvent<K extends keyof GameEventMap>(type: K, payload: GameEventMap[K]): void {
   if (type !== 'task:complete') return;
   const result = payload as GameEventMap['task:complete'];
-  void finishTask(result.stars);
+  void finishTask(result.stars, result.mistakes);
 }
 
 /**
@@ -149,6 +157,8 @@ async function start(): Promise<void> {
       { onExit: handleExit, onEvent: handleEvent },
       progress.completedBefore(props.taskId),
       locale.current,
+      // 做过几次 → 用第几套关卡（content 包里取模）：第一次玩是第 1 套，第二次自动换一套
+      progress.completionsFor(props.taskId),
     );
     if (disposed || !host.value) return;
     await loaded.mount(context);
@@ -249,7 +259,10 @@ onBeforeUnmount(async () => {
       data-testid="play-loading"
       class="absolute inset-0 z-20 flex items-center justify-center bg-paper/95"
     >
-      <p class="text-lg font-bold text-bamboo-deep">{{ t('play.loading') }}</p>
+      <div class="flex flex-col items-center gap-3">
+        <span class="text-5xl animate-pulse" aria-hidden="true">🐼</span>
+        <p class="text-lg font-bold text-bamboo-deep">{{ t('play.loading') }}</p>
+      </div>
     </div>
 
     <!-- 退出确认：误触不会直接中断这一局 -->

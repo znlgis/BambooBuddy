@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ensureSurfaceMessages } from '@bamboo/i18n';
+import type { Component } from 'vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { grantParentUnlock, navigate, revokeParentUnlock, useRoute } from './router';
 import { installBackButtonHandler } from './shell/backButton';
@@ -7,21 +9,34 @@ import { useI18n } from './shell/useI18n';
 import { useProgress } from './stores/progress';
 import { useSettings } from './stores/settings';
 import HomeView from './views/HomeView.vue';
-import TasksView from './views/TasksView.vue';
+// 任务页也按路由懒加载：它静态进首屏时约 1.5 KB gzip，而首屏只剩 0.6 KB 余量。
+const TasksView = defineAsyncComponent(() => import('./views/TasksView.vue'));
+const AdultGate = lazyView(() => import('./components/AdultGate.vue'));
 
 /**
  * 玩法页、家长页、日记页都按路由懒加载：首屏只留小屋/任务/装扮，
  * Phaser 引擎要等孩子真的点开一个玩法才下载（体积门禁盯的就是这条）。
  * 日记页也走懒加载：它只在点开时看，把这部分模板从首屏预算里挪出去。
  */
-const PlayView = defineAsyncComponent(() => import('./views/PlayView.vue'));
-const ParentView = defineAsyncComponent(() => import('./views/ParentView.vue'));
-const DiaryView = defineAsyncComponent(() => import('./views/DiaryView.vue'));
+/**
+ * 懒加载视图统一入口：先等"只被懒加载页面用到的中文文案"就位，再加载视图本身。
+ * 两份 chunk 并行下载，顺序只保证"文案先于首帧"；否则页面会先闪一屏键名。
+ */
+function lazyView(loader: () => Promise<{ default: Component }>): ReturnType<typeof defineAsyncComponent> {
+  return defineAsyncComponent(async () => {
+    const [, view] = await Promise.all([ensureSurfaceMessages(), loader()]);
+    return view.default;
+  });
+}
+
+const PlayView = lazyView(() => import('./views/PlayView.vue'));
+const ParentView = lazyView(() => import('./views/ParentView.vue'));
+const DiaryView = lazyView(() => import('./views/DiaryView.vue'));
 // 装扮页也是"点开才看"：它不在首屏可视区，挪出首屏预算（首屏 gzip 已贴着 60 KB 上限）
-const DressView = defineAsyncComponent(() => import('./views/DressView.vue'));
+const DressView = lazyView(() => import('./views/DressView.vue'));
 // 隐藏小游戏：游戏厅与小游戏宿主都按需加载（小游戏 chunk 里才有 Phaser 场景）
-const ArcadeView = defineAsyncComponent(() => import('./views/ArcadeView.vue'));
-const ArcadePlayView = defineAsyncComponent(() => import('./views/ArcadePlayView.vue'));
+const ArcadeView = lazyView(() => import('./views/ArcadeView.vue'));
+const ArcadePlayView = lazyView(() => import('./views/ArcadePlayView.vue'));
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -64,14 +79,26 @@ let holdFiredAt = 0;
 /** 长按后浏览器补的 click 通常在同一帧/下一帧内；给足余量但别吃掉下一次正常点击 */
 const HOLD_CLICK_WINDOW_MS = 800;
 
+/** 成人门：长按只负责"叫出题目"，答对才发令牌（Apple 期望的 adult-level task） */
+const gateOpen = ref(false);
+const gateQuestion = ref('');
+const gateAnswer = ref(0);
+
+function randomGateQuestion(): string {
+  // 两位数加法：4–8 岁孩子普遍算不出来，成年人不费力；不依赖任何资源
+  const a = 12 + Math.floor(Math.random() * 78);
+  const b = 11 + Math.floor(Math.random() * 78);
+  gateAnswer.value = a + b;
+  return a + ' + ' + b + ' = ?';
+}
+
 function startParentHold(): void {
-  if (holdTimer !== null) return;
+  if (holdTimer !== null || gateOpen.value) return;
   holdTimer = setTimeout(() => {
     holdTimer = null;
     holdFiredAt = platform.now();
-    // 家长页要一次性令牌：没有它，#/parent 直接输地址或浏览器后退都进不去
-    grantParentUnlock(platform.now());
-    navigate('/parent');
+    gateQuestion.value = randomGateQuestion();
+    gateOpen.value = true;
   }, 3000);
 }
 
@@ -91,6 +118,17 @@ function onTitleClick(): void {
   navigate('/');
 }
 
+function onGatePass(): void {
+  gateOpen.value = false;
+  // 家长页要一次性令牌：没有它，#/parent 直接输地址或浏览器后退都进不去
+  grantParentUnlock(platform.now());
+  navigate('/parent');
+}
+
+function onGateCancel(): void {
+  gateOpen.value = false;
+}
+
 function unlockAudio(): void {
   void platform.audio.unlock();
 }
@@ -99,6 +137,8 @@ let offResume: (() => void) | null = null;
 
 onMounted(() => {
   settings.init();
+  // 小屋首帧之后预热懒加载文案：孩子点"任务"时通常已经就位，不额外等一次网络
+  void ensureSurfaceMessages();
   // 安卓实体返回键：先回小屋，再按才退出应用（浏览器里是空操作）
   installBackButtonHandler(route);
   void progress.init();
@@ -135,6 +175,8 @@ function navClass(active: boolean): string {
         @pointerup="cancelParentHold"
         @pointerleave="cancelParentHold"
         @pointercancel="cancelParentHold"
+        @keydown.enter.prevent="startParentHold"
+        @keydown.space.prevent="startParentHold"
       >
         <span class="block truncate text-lg font-bold text-bamboo-deep">{{ t('app.title') }}</span>
         <span class="block truncate text-base text-inksoft">{{ t('app.subtitle') }}</span>
@@ -206,6 +248,7 @@ function navClass(active: boolean): string {
         data-testid="nav-home"
         class="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-base font-bold active:scale-95"
         :class="navClass(route.name === 'home')"
+        :aria-current="route.name === 'home' ? 'page' : undefined"
         @click="navigate('/')"
       >
         <span class="text-xl" aria-hidden="true">🏡</span>
@@ -216,6 +259,7 @@ function navClass(active: boolean): string {
         data-testid="nav-tasks"
         class="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-base font-bold active:scale-95"
         :class="navClass(route.name === 'tasks')"
+        :aria-current="route.name === 'tasks' ? 'page' : undefined"
         @click="navigate('/tasks')"
       >
         <span class="text-xl" aria-hidden="true">✅</span>
@@ -226,11 +270,21 @@ function navClass(active: boolean): string {
         data-testid="nav-dress"
         class="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-base font-bold active:scale-95"
         :class="navClass(route.name === 'dress')"
+        :aria-current="route.name === 'dress' ? 'page' : undefined"
         @click="navigate('/dress')"
       >
         <span class="text-xl" aria-hidden="true">👕</span>
         <span>{{ t('nav.dress') }}</span>
       </button>
     </nav>
+
+    <!-- 成人门：长按标题 3 秒后出题，答对才进家长页（家长页里有清档） -->
+    <AdultGate
+      v-if="gateOpen"
+      :question="gateQuestion"
+      :answer="gateAnswer"
+      @pass="onGatePass"
+      @cancel="onGateCancel"
+    />
   </div>
 </template>

@@ -1,10 +1,13 @@
-import type { CareAction, ClothingSlot, RoomSlot, StatKey, TaskId, TimeSlot } from '@bamboo/game-kit';
+import type { CareAction, StatKey, TaskId, TimeSlot } from '@bamboo/game-kit';
 import type { MessageKey } from '@bamboo/i18n';
 
 /**
  * 内容 id / 动作 → 文案键的映射表。
  * 为什么单独一张表：动态拼 'hint.' + id 在运行时能跑，但键名写错就没有 typecheck 兜底，
  * 这里用 Record<联合类型, MessageKey> 把"漏一条"变成编译错误。
+ *
+ * 注意：这张表属于首屏（小屋用它渲染状态条、亲昵按钮与今日推荐）。
+ * 只被懒加载页面用到的映射要另开文件（例如 labels-dress.ts），别往这里加。
  */
 export const STAT_LABEL_KEYS: Record<StatKey, MessageKey> = {
   fullness: 'stat.fullness',
@@ -46,19 +49,4 @@ export const SLOT_LABEL_KEYS: Record<TimeSlot, MessageKey> = {
   morning: 'time.morning',
   noon: 'time.noon',
   evening: 'time.evening',
-};
-export const CLOTHING_SLOT_KEYS: Record<ClothingSlot, MessageKey> = {
-  hat: 'slot.hat',
-  bib: 'slot.bib',
-  outfit: 'slot.outfit',
-  backpack: 'slot.backpack',
-  shoes: 'slot.shoes',
-};
-
-export const ROOM_SLOT_KEYS: Record<RoomSlot, MessageKey> = {
-  wallpaper: 'slot.wallpaper',
-  bed: 'slot.bed',
-  shelf: 'slot.shelf',
-  toyCorner: 'slot.toyCorner',
-  rug: 'slot.rug',
 };

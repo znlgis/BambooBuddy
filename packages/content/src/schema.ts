@@ -67,6 +67,12 @@ export const TaskDetailSchema = TaskSummarySchema.extend({
   retry: z.string().min(1).max(100),
   /** 各模板自己的关卡脚本，由 templates/schemas 校验 */
   levelScript: z.unknown(),
+  /**
+   * 第 2 套及以后的关卡脚本（可选）。
+   * levelScript 永远是第 1 套：旧格式（只有一份关卡脚本）不改也能读；
+   * 新内容在 levelScript 之后追加 variants，由 loadTask() 按「日期 + 任务 id」确定性挑一套。
+   */
+  variants: z.array(z.unknown()).max(3).optional(),
 });
 export type TaskDetail = z.infer<typeof TaskDetailSchema>;
 

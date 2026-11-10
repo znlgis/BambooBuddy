@@ -15,11 +15,19 @@ import {
   emptyDay,
   emptySave,
   ensureDay,
+  feedBird,
   fragmentsFor,
+  harvestMultiplier,
   isFutureVersionSave,
+  isHarvestDay,
   levelForXp,
+  MAX_STORED_MISTAKES,
   migrate,
+  MILESTONES,
+  milestonesFor,
+  nextMilestoneFor,
   nextStreak,
+  progressFor,
   pruneDays,
   recommendedTasks,
   starsFor,
@@ -39,6 +47,10 @@ const DAY = 86_400_000;
 /** 本地时间 2026-10-19 09:00（周一早上） */
 const T0 = new Date(2026, 9, 19, 9, 0, 0).getTime();
 const TODAY = '2026-10-19';
+
+/** 本地时间 2026-10-24 09:00（周六 = 丰收日） */
+const SAT = new Date(2026, 9, 24, 9, 0, 0).getTime();
+const SAT_DAY = '2026-10-24';
 
 function task(overrides: Partial<TaskSummary> = {}): TaskSummary {
   return {
@@ -682,5 +694,421 @@ describe('运行时输入校验（类型断言不能代替校验）', () => {
   it('非法日历日（2026-02-31）不会被算成 3 月 3 日', () => {
     expect(daysBetween('2026-02-31', '2026-03-03')).toBe(0);
     expect(addDays('2026-02-31', 1)).toBe('2026-02-31');
+  });
+});
+/* ================================================================== *
+ * 存档 v5：累计件数 / 喂小鸟 / 上一次失误 / 30 分钟收尾（P1-3/4/5/7）
+ * ================================================================== */
+
+describe('存档 v5：累计件数 / 喂小鸟 / 上一次失误 / 30 分钟收尾', () => {
+  /** 一份完整的 v4 老档：既有字段全在，v5 新字段一个都没有 */
+  function v4Save(): Record<string, unknown> {
+    return {
+      schemaVersion: 4,
+      updatedAt: T0,
+      pet: {
+        name: '竹竹',
+        xp: 120,
+        stats: { fullness: 60, energy: 70, clean: 80, mood: 90, health: 85 },
+        lastDecayDay: TODAY,
+        shoots: 12,
+        fragments: 2,
+        unlocked: ['hat-bamboo'],
+        stickers: ['brush'],
+        intimacy: 6,
+        careDays: { pat: TODAY },
+        equipped: { hat: 'hat-bamboo' },
+        room: { wallpaper: 'room-wall-cream', rug: 'room-rug-green' },
+        feeds: 4,
+      },
+      tasks: {
+        brush: {
+          taskId: 'brush',
+          stars: 3,
+          completions: 5,
+          lastPlayedAt: T0,
+          lastCompletedDay: TODAY,
+          streak: 3,
+          bestStreak: 3,
+        },
+        feed: {
+          taskId: 'feed',
+          stars: 2,
+          completions: 2,
+          lastPlayedAt: T0 - DAY,
+          lastCompletedDay: yesterdayOf(TODAY),
+          streak: 1,
+          bestStreak: 2,
+        },
+      },
+      arcade: {
+        popstar: { best: 42, plays: 6, lastPlayedDay: TODAY },
+        bounce: { best: 0, plays: 0, lastPlayedDay: null },
+        tetris: { best: 0, plays: 0, lastPlayedDay: null },
+      },
+      days: {
+        [TODAY]: {
+          date: TODAY,
+          completed: ['brush', 'feed'],
+          rewards: { shoots: 5, xp: 22, fragments: 0 },
+          stickers: ['brush'],
+          care: ['pat'],
+          seconds: 300,
+          restDismissed: true,
+          arcade: ['popstar'],
+          arcadePlays: 3,
+          arcadeSecret: false,
+        },
+      },
+    };
+  }
+
+  it('v4 → v5：版本升级、新字段齐全，竹笋/星星/贴纸一根不少', () => {
+    const out = migrate(v4Save(), T0);
+    expect(out.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
+    expect(out.schemaVersion).toBe(5);
+    // v5 新字段
+    expect(out.pet.totalCompletions).toBe(7); // 5 + 2：由各任务 completions 之和回填
+    expect(out.pet.birdFeeds).toBe(0);
+    expect(out.tasks.brush.lastMistakes).toBe(0);
+    expect(out.tasks.feed.lastMistakes).toBe(0);
+    expect(out.days[TODAY]?.restWrapDismissed).toBe(false);
+    // 老档的数值与既有字段一个都不能丢
+    expect(out.pet.shoots).toBe(12);
+    expect(out.pet.xp).toBe(120);
+    expect(out.pet.fragments).toBe(2);
+    expect(out.pet.feeds).toBe(4);
+    expect(out.pet.intimacy).toBe(6);
+    expect(out.pet.stickers).toEqual(['brush']);
+    expect(out.pet.equipped.hat).toBe('hat-bamboo');
+    expect(out.tasks.brush.stars).toBe(3);
+    expect(out.tasks.brush.completions).toBe(5);
+    expect(out.tasks.brush.streak).toBe(3);
+    expect(out.tasks.feed.bestStreak).toBe(2);
+    expect(out.days[TODAY]?.completed).toEqual(['brush', 'feed']);
+    expect(out.days[TODAY]?.rewards).toEqual({ shoots: 5, xp: 22, fragments: 0 });
+    expect(out.days[TODAY]?.restDismissed).toBe(true);
+    expect(out.days[TODAY]?.arcadePlays).toBe(3);
+    expect(out.arcade.popstar).toEqual({ best: 42, plays: 6, lastPlayedDay: TODAY });
+  });
+
+  it('空档默认值：新字段都有安全默认（新档不会硬夸「进步」）', () => {
+    const empty = emptySave(T0);
+    expect(empty.pet.totalCompletions).toBe(0);
+    expect(empty.pet.birdFeeds).toBe(0);
+    expect(empty.tasks.brush.lastMistakes).toBe(0);
+    expect(empty.days[TODAY]?.restWrapDismissed).toBe(false);
+  });
+
+  it('坏字段逐条兜底：totalCompletions 负数 / NaN / 字符串', () => {
+    const tasks = { brush: { completions: 4 } };
+    expect(migrate({ schemaVersion: 4, pet: { totalCompletions: -5 }, tasks }, T0).pet.totalCompletions).toBe(4);
+    expect(
+      migrate({ schemaVersion: 4, pet: { totalCompletions: Number.NaN }, tasks }, T0).pet.totalCompletions,
+    ).toBe(4);
+    expect(
+      migrate({ schemaVersion: 4, pet: { totalCompletions: 'many' }, tasks }, T0).pet.totalCompletions,
+    ).toBe(4);
+    // 合法值比任务次数之和大时保留大的那个（累计数只增不减）
+    expect(
+      migrate({ schemaVersion: 5, pet: { totalCompletions: 37 }, tasks }, T0).pet.totalCompletions,
+    ).toBe(37);
+  });
+
+  it('坏字段逐条兜底：lastMistakes 越界 / birdFeeds 负数 / restWrapDismissed 非布尔', () => {
+    const out = migrate(
+      {
+        schemaVersion: 4,
+        pet: { shoots: 9, birdFeeds: -3 },
+        tasks: {
+          brush: { completions: 2, lastMistakes: -2 },
+          feed: { completions: 1, lastMistakes: 1000 },
+          sleep: { completions: 0, lastMistakes: Number.NaN },
+          wash: { completions: 0, lastMistakes: 2 },
+        },
+        days: { [TODAY]: { restWrapDismissed: 'yes' } },
+      },
+      T0,
+    );
+    expect(out.pet.shoots).toBe(9);
+    expect(out.pet.birdFeeds).toBe(0);
+    expect(out.pet.totalCompletions).toBe(3); // totalCompletions 缺失 → 任务次数之和
+    expect(out.tasks.brush.lastMistakes).toBe(0);
+    expect(out.tasks.feed.lastMistakes).toBe(MAX_STORED_MISTAKES);
+    expect(out.tasks.sleep.lastMistakes).toBe(0);
+    expect(out.tasks.wash.lastMistakes).toBe(2);
+    expect(out.days[TODAY]?.restWrapDismissed).toBe(false);
+  });
+
+  it('v5 存档已有的 restWrapDismissed=true 会被保留', () => {
+    const out = migrate({ schemaVersion: 5, days: { [TODAY]: { restWrapDismissed: true } } }, T0);
+    expect(out.days[TODAY]?.restWrapDismissed).toBe(true);
+  });
+});
+
+describe('丰收日：每周六竹笋 ×2（确定性、非随机）', () => {
+  it('只有周六是丰收日（坏日期永远不是）', () => {
+    expect(isHarvestDay(SAT_DAY)).toBe(true);
+    expect(harvestMultiplier(SAT_DAY)).toBe(2);
+    expect(harvestMultiplier(TODAY)).toBe(1); // 周一
+    expect(harvestMultiplier(addDays(TODAY, 1))).toBe(1); // 周二
+    expect(isHarvestDay('2026-10-22')).toBe(false);
+    expect(harvestMultiplier('bad')).toBe(1);
+    expect(harvestMultiplier('2026-02-31')).toBe(1); // 非法日历日不误判成丰收日
+  });
+
+  it('周六第一次完成：竹笋 ×2，成长值不翻倍', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => SAT, SAT);
+    await pm.init();
+    const before = pm.snapshot().pet;
+    const result = await pm.completeTask(task(), 3, SAT);
+    expect(result.harvest).toBe(true);
+    expect(result.shoots).toBe(4); // 2 根 × 2
+    expect(result.xp).toBe(10); // 成长值不翻倍
+    expect(pm.snapshot().pet.shoots).toBe(before.shoots + 4);
+    expect(pm.snapshot().days[SAT_DAY]?.rewards.shoots).toBe(4);
+    expect(store.current?.days[SAT_DAY]?.rewards.shoots).toBe(4);
+  });
+
+  it('周六重复玩：先减半再 ×2（2 → 1 → 2），不会低于 1', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => SAT, SAT);
+    await pm.init();
+    await pm.completeTask(task(), 3, SAT);
+    const shootsAfterFirst = pm.snapshot().pet.shoots;
+    const repeat = await pm.completeTask(task(), 2, SAT);
+    expect(repeat.isFirstToday).toBe(false);
+    expect(repeat.harvest).toBe(true);
+    expect(repeat.shoots).toBe(2);
+    expect(pm.snapshot().pet.shoots).toBe(shootsAfterFirst + 2);
+    // 「最低 1 根」的规则仍然在：奖励 1 根的任务减半后是 1，丰收日 ×2 是 2
+    expect(completionReward(task({ reward: { shoots: 1, xp: 5 } }), false, 2)).toEqual({
+      shoots: 2,
+      xp: 3,
+      fragments: 0,
+    });
+  });
+
+  it('工作日不翻倍：第一次 2、重复 1（与 v4 口径完全一致）', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    const first = await pm.completeTask(task(), 3, T0);
+    expect(first.harvest).toBe(false);
+    expect(first.shoots).toBe(2);
+    expect((await pm.completeTask(task(), 3, T0)).shoots).toBe(1);
+    expect(completionReward(task(), true, 1)).toEqual({ shoots: 2, xp: 10, fragments: 0 });
+  });
+});
+
+describe('喂小鸟：竹笋的轻量出口（不给数值增益）', () => {
+  it('纯函数：竹笋够就扣 1 根、次数 +1', () => {
+    expect(feedBird({ shoots: 3, birdFeeds: 0 })).toEqual({
+      ok: true,
+      shoots: 2,
+      birdFeeds: 1,
+      spent: 1,
+    });
+    expect(feedBird({ shoots: 1, birdFeeds: 4 })).toEqual({
+      ok: true,
+      shoots: 0,
+      birdFeeds: 5,
+      spent: 1,
+    });
+  });
+
+  it('纯函数：竹笋不足返回 noShoots，不扣、不出负数', () => {
+    expect(feedBird({ shoots: 0, birdFeeds: 4 })).toEqual({
+      ok: false,
+      reason: 'noShoots',
+      shoots: 0,
+      birdFeeds: 4,
+      spent: 0,
+    });
+    expect(feedBird({ shoots: Number.NaN, birdFeeds: Number.NaN })).toEqual({
+      ok: false,
+      reason: 'noShoots',
+      shoots: 0,
+      birdFeeds: 0,
+      spent: 0,
+    });
+    expect(feedBird({ shoots: -5, birdFeeds: -2 }).ok).toBe(false);
+  });
+
+  it('成本不合法时按 1 根算（不给免费喂的口子）', () => {
+    expect(feedBird({ shoots: 2, birdFeeds: 0 }, 0).spent).toBe(1);
+    expect(feedBird({ shoots: 2, birdFeeds: 0 }, -3).spent).toBe(1);
+    expect(feedBird({ shoots: 2, birdFeeds: 0 }, Number.NaN).spent).toBe(1);
+  });
+
+  it('Manager：竹笋不足时返回 reason 且一个字都不写档', async () => {
+    const initial = emptySave(T0);
+    initial.pet.shoots = 0;
+    const store = memoryStore(initial);
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    const writes = store.writes;
+    const outcome = await pm.feedBird(T0);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reason).toBe('noShoots');
+    expect(outcome.shoots).toBe(0);
+    expect(outcome.birdFeeds).toBe(0);
+    expect(outcome.spent).toBe(0);
+    expect(store.writes).toBe(writes); // 判定即落档：拒绝 = 不落档
+    expect(pm.snapshot().pet.shoots).toBe(0);
+    expect(pm.snapshot().pet.birdFeeds).toBe(0);
+  });
+
+  it('Manager：竹笋够时扣一根、birdFeeds +1 并立即落盘；不动成长/喂竹竹次数', async () => {
+    const initial = emptySave(T0);
+    initial.pet.shoots = 5;
+    initial.pet.feeds = 2;
+    const xpBefore = initial.pet.xp;
+    const store = memoryStore(initial);
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    const outcome = await pm.feedBird(T0);
+    expect(outcome).toEqual({ ok: true, shoots: 4, birdFeeds: 1, spent: 1 });
+    expect(pm.snapshot().pet.shoots).toBe(4);
+    expect(pm.snapshot().pet.birdFeeds).toBe(1);
+    expect(store.current?.pet.birdFeeds).toBe(1);
+    expect(store.current?.pet.feeds).toBe(2); // 喂竹竹的次数不变
+    expect(store.current?.pet.xp).toBe(xpBefore); // 不给经验，不污染任务经济
+    expect(store.current?.tasks.brush.completions).toBe(0);
+  });
+});
+
+describe('进步反馈 progressFor：只在更好时说话', () => {
+  it('更好 / 持平 / 更差 三种情况', () => {
+    expect(progressFor(1, 3)).toEqual({ better: 2 });
+    expect(progressFor(0, 2)).toEqual({ better: 2 });
+    expect(progressFor(3, 3)).toEqual({ better: 0 });
+    expect(progressFor(4, 3)).toEqual({ better: 0 });
+    expect(progressFor(0, 0)).toEqual({ better: 0 }); // 第一次做没有"上次"可比
+  });
+
+  it('坏输入兜底：NaN / 负数 / 小数不会算出诡异的「进步」', () => {
+    expect(progressFor(Number.NaN, 3)).toEqual({ better: 0 }); // 坏输入宁可不夸
+    expect(progressFor(-1, 3)).toEqual({ better: 0 });
+    expect(progressFor(1.9, 3)).toEqual({ better: 2 }); // 小数向下取整
+    expect(progressFor(2, Number.NaN)).toEqual({ better: 0 });
+  });
+});
+
+describe('完成卡：上次失误 / 累计件数 / 累计里程碑', () => {
+  it('写入 lastMistakes 与累计件数，并给出「比上次少错 X 次」', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    const first = await pm.completeTask(task(), 2, { mistakes: 4 });
+    expect(first.mistakes).toBe(4);
+    expect(first.better).toBe(0);
+    expect(first.totalCompletions).toBe(1);
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(4);
+    expect(store.current?.tasks.brush.lastMistakes).toBe(4); // 判定即落档
+
+    const second = await pm.completeTask(task(), 3, { mistakes: 1 });
+    expect(second.better).toBe(3);
+    expect(second.mistakes).toBe(1);
+    expect(second.totalCompletions).toBe(2);
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(1);
+
+    const worse = await pm.completeTask(task(), 1, { mistakes: 5 });
+    expect(worse.better).toBe(0); // 更差不说话
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(5);
+  });
+
+  it('第三参数继续接受时间戳（老调用不用改），失误数越界被夹取', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    const oldStyle = await pm.completeTask(task(), 3, T0);
+    expect(oldStyle.mistakes).toBe(0);
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(0);
+    // 已经存过真实值时，老调用不会把它覆盖成 0（不知道 ≠ 完美）
+    await pm.completeTask(task(), 3, { mistakes: 3 });
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(3);
+    await pm.completeTask(task(), 3, T0);
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(3);
+    const nan = await pm.completeTask(task(), 3, { mistakes: Number.NaN });
+    expect(nan.mistakes).toBe(0);
+    const huge = await pm.completeTask(task(), 3, { mistakes: 1_000_000 });
+    expect(huge.mistakes).toBe(MAX_STORED_MISTAKES);
+    expect(pm.snapshot().tasks.brush.lastMistakes).toBe(MAX_STORED_MISTAKES);
+    expect(pm.snapshot().pet.totalCompletions).toBe(5);
+  });
+
+  it('累计件数跨过里程碑时返回它（第 5 件），普通一次返回 null', async () => {
+    const initial = emptySave(T0);
+    initial.pet.totalCompletions = 4;
+    const store = memoryStore(initial);
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    const outcome = await pm.completeTask(task(), 3, T0);
+    expect(outcome.totalCompletions).toBe(5);
+    expect(outcome.milestone?.at).toBe(5);
+    expect(outcome.milestone?.title).toBe('五件小事');
+    expect((await pm.completeTask(task(), 3, T0)).milestone).toBeNull();
+  });
+});
+
+describe('累计里程碑：1 / 5 / 10 / 20 / 30 / 50', () => {
+  it('六个里程碑、中英各一份、不带 emoji', () => {
+    expect(MILESTONES.map((milestone) => milestone.at)).toEqual([1, 5, 10, 20, 30, 50]);
+    for (const milestone of MILESTONES) {
+      expect(milestone.title.length).toBeGreaterThan(0);
+      expect(milestone.titleEn.length).toBeGreaterThan(0);
+      expect(
+        /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(milestone.title + milestone.titleEn),
+      ).toBe(false);
+    }
+  });
+
+  it('milestonesFor 只返回已经跨过的（新玩家为空、坏输入不炸）', () => {
+    expect(milestonesFor(0)).toEqual([]);
+    expect(milestonesFor(-5)).toEqual([]);
+    expect(milestonesFor(Number.NaN)).toEqual([]);
+    expect(milestonesFor(1).map((milestone) => milestone.at)).toEqual([1]);
+    expect(milestonesFor(5).map((milestone) => milestone.at)).toEqual([1, 5]);
+    expect(milestonesFor(49).map((milestone) => milestone.at)).toEqual([1, 5, 10, 20, 30]);
+    expect(milestonesFor(50)).toHaveLength(6);
+    expect(milestonesFor(9999)).toHaveLength(6);
+  });
+
+  it('nextMilestoneFor 给出下一个目标；到顶后返回 null（不设"必须连续"的门槛）', () => {
+    expect(nextMilestoneFor(0)?.at).toBe(1);
+    expect(nextMilestoneFor(4)?.at).toBe(5);
+    expect(nextMilestoneFor(49)?.at).toBe(50);
+    expect(nextMilestoneFor(50)).toBeNull();
+  });
+});
+
+describe('30 分钟收尾卡片：当天收下一次，跨天自动重置', () => {
+  it('dismissRestWrap 落档；重复调用幂等；dismissRest 不会顺手收起它', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    expect(pm.snapshot().days[TODAY]?.restWrapDismissed).toBe(false);
+    await pm.dismissRest(T0);
+    expect(pm.snapshot().days[TODAY]?.restWrapDismissed).toBe(false);
+    const writes = store.writes;
+    await pm.dismissRestWrap(T0);
+    expect(pm.snapshot().days[TODAY]?.restWrapDismissed).toBe(true);
+    expect(store.current?.days[TODAY]?.restWrapDismissed).toBe(true);
+    expect(store.writes).toBe(writes + 1);
+    await pm.dismissRestWrap(T0);
+    expect(store.writes).toBe(writes + 1); // 幂等：已经收下就不重复写
+  });
+
+  it('跨天是新的一天：收尾卡片标记自动归零', async () => {
+    const store = memoryStore();
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    await pm.dismissRestWrap(T0);
+    const tomorrow = addDays(TODAY, 1);
+    await pm.refresh(T0 + DAY);
+    expect(pm.snapshot().days[TODAY]?.restWrapDismissed).toBe(true); // 昨天的记录还在
+    expect(pm.snapshot().days[tomorrow]?.restWrapDismissed).toBe(false);
   });
 });

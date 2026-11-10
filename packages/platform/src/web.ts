@@ -21,12 +21,21 @@ const SAVE_KEY = 'save';
 /** 存储不可用的原因：只用于日志/报错文案，不参与业务判断 */
 export type StorageIssue = 'unsupported' | 'timeout' | 'blocked' | 'error';
 
-interface OpenResult {
+export interface OpenResult {
   db: IDBDatabase | null;
   issue: StorageIssue | null;
 }
 
-function openDb(): Promise<OpenResult> {
+/** 打开数据库；单测注入 fake（不引入 jsdom / fake-indexeddb），生产走下方的真实实现 */
+export type OpenDatabase = () => Promise<OpenResult>;
+
+/**
+ * 默认真实实现：indexedDB.open + 3 秒超时兜底。
+ *
+ * 这里**不做任何缓存**：超时/blocked 只代表"这一次没开成"。别的标签页关掉、
+ * 隐私模式被授权之后，下一次调用仍有机会成功（store 层负责重试节奏）。
+ */
+export function openIdbDatabase(): Promise<OpenResult> {
   return new Promise((resolve) => {
     if (typeof indexedDB === 'undefined') {
       resolve({ db: null, issue: 'unsupported' });
@@ -35,7 +44,7 @@ function openDb(): Promise<OpenResult> {
     // 隐私模式 / 存储被禁 / 旧标签页占着升级：open 可能永不回调 ——
     // 超时就退内存档，绝不让启动流程挂在这里（CHAGS 踩过的坑）。
     // 注意：这里只做「本次会话降级」，不缓存成永久结论 —— 别的标签页关掉、存储被授权之后，
-    // 下一次 openDb 仍有机会成功。
+    // 下一次 openIdbDatabase 仍有机会成功。
     let settled = false;
     const timer = setTimeout(() => settle(null, 'timeout'), 3000);
     const request = indexedDB.open(DB_NAME, 1);
@@ -75,6 +84,26 @@ export class StorageUnavailableError extends Error {
   }
 }
 
+/** 存储健康度：排障与 e2e 读它；界面不按它做业务判断 */
+export interface StorageHealth {
+  /** ready = 已有连接；degraded = 本次降级为内存（issue 说明原因） */
+  state: 'ready' | 'degraded';
+  issue: StorageIssue | null;
+  /** open 失败过几次：> 0 说明这次会话曾经降级，但之后仍可能恢复 */
+  failures: number;
+}
+
+export interface IdbStoreOptions {
+  /** 打开数据库；默认 openIdbDatabase。单测注入 fake */
+  open?: OpenDatabase;
+  /** 失败后再次尝试 open 的最小间隔（毫秒，默认 2000）；0 = 下次访问立刻重试 */
+  retryDelayMs?: number;
+  /** 时钟；只用于判断重试冷却（默认 Date.now） */
+  now?: () => number;
+}
+
+export type IdbProgressStore = ProgressStore & { health(): StorageHealth };
+
 /**
  * IndexedDB 存档；不可用时降级为内存（无痕模式 / 测试）。
  *
@@ -82,13 +111,67 @@ export class StorageUnavailableError extends Error {
  * 以前 `save()` 在无 db 时直接 return，调用方以为存档成功，
  * 关掉页面才发现今天白玩 —— 现在改为 reject，走 progress store 的 unsaved 提示链路。
  */
-export function createIdbProgressStore(): ProgressStore {
+export function createIdbProgressStore(options: IdbStoreOptions = {}): IdbProgressStore {
+  const open = options.open ?? openIdbDatabase;
+  const retryDelayMs = options.retryDelayMs ?? 2000;
+  const now = options.now ?? Date.now;
   let memory: SaveData | null = null;
-  const dbPromise = openDb();
+  let opened: IDBDatabase | null = null;
+  let opening: Promise<OpenResult> | null = null;
+  let issue: StorageIssue | null = null;
+  let failedAt = 0;
+  let failures = 0;
+
+  function health(): StorageHealth {
+    return { state: opened === null ? 'degraded' : 'ready', issue, failures };
+  }
+
+  /**
+   * 拿连接。三条纪律：
+   * 1. **失败不是永久结论**：超时 / blocked / error 在冷却期后重试 —— 隐私模式退出、
+   *    别的标签页关掉之后，同一次会话里仍然有机会落盘（以前的实现把结果永久缓存，等于放弃）；
+   * 2. **同一时刻只开一次**（single-flight）：load/save 并发时不会重复 open 抢升级；
+   * 3. 只有真正没有 IndexedDB（unsupported）才永久降级：它不会在本次会话里凭空出现。
+   */
+  function connect(): Promise<OpenResult> {
+    if (opened !== null) return Promise.resolve({ db: opened, issue: null });
+    if (opening !== null) return opening;
+    if (issue === 'unsupported') return Promise.resolve({ db: null, issue });
+    // 冷却期内直接返回上次的失败：避免"每次读/写都重新等 3 秒超时"把界面拖住
+    if (issue !== null && now() - failedAt < retryDelayMs) {
+      return Promise.resolve({ db: null, issue });
+    }
+
+    let settle!: (result: OpenResult) => void;
+    const attempt = new Promise<OpenResult>((resolve) => {
+      settle = resolve;
+    });
+    opening = attempt;
+    void (async () => {
+      let result: OpenResult;
+      try {
+        result = await open();
+      } catch {
+        result = { db: null, issue: 'error' };
+      }
+      if (result.db !== null) {
+        opened = result.db;
+        issue = null;
+      } else {
+        failures += 1;
+        issue = result.issue ?? 'error';
+        failedAt = now();
+      }
+      opening = null;
+      settle(result);
+    })();
+    return attempt;
+  }
 
   return {
+    health,
     async load(): Promise<SaveData> {
-      const { db } = await dbPromise;
+      const { db } = await connect();
       if (!db) {
         // 降级为内存：本次会话仍可玩，读到的只是内存里的（可能是空的）快照
         return memory ?? emptySave(Date.now());
@@ -112,10 +195,10 @@ export function createIdbProgressStore(): ProgressStore {
     },
     async save(data: SaveData): Promise<void> {
       memory = data;
-      const { db, issue } = await dbPromise;
+      const { db, issue: openIssue } = await connect();
       // 没有 IndexedDB 时必须让调用方知道：以前这里直接 return，
       // 上层以为写成功了，孩子关掉页面才发现今天白玩（静默丢失是最坏的结果）。
-      if (!db) throw new StorageUnavailableError(issue ?? 'error');
+      if (!db) throw new StorageUnavailableError(openIssue ?? 'error');
       // 写失败同样必须让调用方知道（配额满 / 无痕模式）
       await new Promise<void>((resolve, reject) => {
         try {
@@ -134,6 +217,15 @@ export function createIdbProgressStore(): ProgressStore {
 
 interface WebkitWindow extends Window {
   webkitAudioContext?: typeof AudioContext;
+}
+
+/**
+ * 朗读兜底超时：Web Speech 契约要求 `done` 必须 resolve（否则界面永远停在"正在听"）。
+ * 按中文约 5 字/秒估算，再加 2 秒调度余量；下限 2 秒、上限 15 秒。
+ * 抽成导出纯函数是为了让"文本长度 → 超时"这条规则可单测（而不是埋在闭包里）。
+ */
+export function speechTimeoutMs(text: string): number {
+  return Math.min(15_000, Math.max(2_000, (text.length / 5) * 1_000 + 2_000));
 }
 
 /**
@@ -302,9 +394,7 @@ export function createWebAudioBus(): AudioBus {
         utterance.onerror = () => settle('unavailable');
         // 兜底：某些 WebView / 被 cancel 打断的 utterance 不会触发 end/error，
         // 契约要求 done 必须 resolve（否则调用方永远停在"正在听"）。
-        // 上限按文本长度估（中文约 5 字/秒），再加 2 秒调度余量。
-        const estimateMs = Math.min(15_000, Math.max(2_000, (text.length / 5) * 1_000 + 2_000));
-        timer = setTimeout(() => settle('unavailable'), estimateMs);
+        timer = setTimeout(() => settle('unavailable'), speechTimeoutMs(text));
         speechSynthesis.speak(utterance);
       });
       return { done };

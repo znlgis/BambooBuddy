@@ -17,7 +17,7 @@ import {
 import type { PandaMood } from '@bamboo/phaser-kit';
 import { createOrderState, tapStep } from './order.logic';
 import type { OrderLevel } from './order.logic';
-import { ORDER_LAYOUT, SCENE_KEYS } from './layout';
+import { ORDER_LAYOUT, SCENE_KEYS, STEP_DOTS, stepDotsLeft } from './layout';
 
 /**
  * 睡前顺序：按顺序把四件事做完（拉窗帘 → 关灯 → 盖被子 → 拍拍睡）。
@@ -35,10 +35,6 @@ const PANDA_POSE = { x: 350, y: 830, scale: 0.95 } as const;
 
 /** 床：被子槽位（375,1040）就落在这张床上 */
 const BED = { x: 140, y: 940, w: 470, h: 180 } as const;
-
-/** 顶部进度点 */
-const DOTS_Y = 168;
-const DOTS_GAP = 64;
 
 /** 当前步骤提示（只用内容里本来就有的短标签，不另写文案） */
 const STEP_LABEL_Y = 226;
@@ -211,14 +207,14 @@ export function createOrderScene(ctx: GameContext, level: OrderLevel): Phaser.Ty
       if (!g) return;
       g.clear();
       const total = level.steps.length;
-      const startX = this.W / 2 - ((total - 1) * DOTS_GAP) / 2;
+      const startX = stepDotsLeft(total, this.W);
       for (let i = 0; i < total; i += 1) {
         const done = i < this.state.completed.length;
         // 已完成 = 实心，未完成 = 空心：不靠颜色单独传达信息
         g.fillStyle(done ? THEME.gold : THEME.card, 1);
-        g.fillCircle(startX + i * DOTS_GAP, DOTS_Y, 13);
-        g.lineStyle(4, THEME.outline, 1);
-        g.strokeCircle(startX + i * DOTS_GAP, DOTS_Y, 13);
+        g.fillCircle(startX + i * STEP_DOTS.gap, STEP_DOTS.y, STEP_DOTS.radius);
+        g.lineStyle(STEP_DOTS.outline, THEME.outline, 1);
+        g.strokeCircle(startX + i * STEP_DOTS.gap, STEP_DOTS.y, STEP_DOTS.radius);
       }
     }
 

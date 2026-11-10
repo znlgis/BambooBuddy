@@ -5,9 +5,19 @@ import { CARE_ACTIONS } from '@bamboo/game-kit';
 import type { CareAction } from '@bamboo/game-kit';
 import { STAT_KEYS } from '@bamboo/content/ids';
 import type { MessageKey } from '@bamboo/i18n';
-import { currentSlot, dayKey, intimacyLevel, recommendedTasks, statHints } from '@bamboo/progress';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  DAILY_TASK_TARGET,
+  currentSlot,
+  dayKey,
+  intimacyLevel,
+  recommendedTasks,
+  statHints,
+} from '@bamboo/progress';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue';
 import PandaBuddy from '../components/PandaBuddy.vue';
+// 彩蛋浮层绝大多数会话都用不到：懒加载，提纲式地占首屏预算
+const SecretEgg = defineAsyncComponent(() => import('../components/SecretEgg.vue'));
+const HomeExtras = defineAsyncComponent(() => import('../components/HomeExtras.vue'));
 import RoomScene from '../components/RoomScene.vue';
 import { CARE_LABELS, STAT_COLORS, STAT_LABEL_KEYS, TASK_HINT_KEYS } from '../logic/labels';
 import { moodFromStats } from '../logic/pandaLook';
@@ -30,6 +40,9 @@ const { t, locale } = useI18n();
 const tasks = computed(() => taskSummaries(locale.current));
 
 const mood = computed(() => moodFromStats(progress.pet.stats));
+
+/** 今天完成了多少件不同的小事：每日份量对家长/孩子都明示（数据早就有，只是没展示） */
+const doneToday = computed(() => progress.todayRecord.completed.length);
 
 /** 打招呼按时段变：早上/中午/晚上各一句，孩子在幼儿园也会对照现实时间 */
 const greetingKey = computed<MessageKey>(() => {
@@ -72,30 +85,13 @@ const SECRET_WINDOW_MS = 5000;
 
 const secretOpen = ref(false);
 const pandaWiggle = ref(false);
-const SECRET_TITLE_ID = 'home-secret-title';
-const secretGoRef = ref<HTMLButtonElement | null>(null);
 let pandaTaps: number[] = [];
 let wiggleTimer: ReturnType<typeof setTimeout> | null = null;
-let escHandler: ((event: KeyboardEvent) => void) | null = null;
 
 /** 浮层只有一个关法：关掉它（Esc、按钮、点"等会儿"都走这里） */
 function closeSecret(): void {
   secretOpen.value = false;
 }
-
-/* 彩蛋浮层是模态：打开时把焦点交给主按钮，Esc 能关，读屏知道这是一个 dialog */
-watch(secretOpen, (open) => {
-  if (escHandler !== null) {
-    window.removeEventListener('keydown', escHandler);
-    escHandler = null;
-  }
-  if (!open) return;
-  escHandler = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape') closeSecret();
-  };
-  window.addEventListener('keydown', escHandler);
-  void nextTick(() => secretGoRef.value?.focus());
-});
 
 /**
  * 竹竹的小秘密：连点它 7 次，会带你走一条竹林小路 ——
@@ -132,8 +128,6 @@ onBeforeUnmount(() => {
   wiggleTimer = null;
   if (careFlashTimer !== null) clearTimeout(careFlashTimer);
   careFlashTimer = null;
-  if (escHandler !== null) window.removeEventListener('keydown', escHandler);
-  escHandler = null;
 });
 
 async function doCare(action: CareAction): Promise<void> {
@@ -220,6 +214,10 @@ onMounted(() => {
       <p class="bg-card px-3 py-2 text-base text-inksoft">
         {{ progress.nextStage ? t('home.nextStage', { n: progress.xpToNext }) : t('home.maxStage') }}
       </p>
+      <!-- 今日份量：孩子今天要做几件事，一句话说清 -->
+      <p data-testid="home-daily-limit" class="bg-card px-3 pb-2 text-base text-inksoft">
+        {{ t('home.dailyLimit', { n: DAILY_TASK_TARGET, done: doneToday }) }}
+      </p>
     </div>
 
     <!-- 竹林小门：完成今天四件小事后出现，当天有效；上面三款小游戏各玩一次 -->
@@ -254,42 +252,8 @@ onMounted(() => {
       <span class="text-base text-bamboo" aria-hidden="true">▶</span>
     </button>
 
-    <!-- 竹林小路：连点竹竹 7 次后的隐藏彩蛋（当天无限畅玩） -->
-    <div
-      v-if="secretOpen"
-      data-testid="home-secret"
-      role="dialog"
-      aria-modal="true"
-      :aria-labelledby="SECRET_TITLE_ID"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 px-6"
-    >
-      <div class="w-full max-w-sm rounded-3xl border-2 border-bamboo bg-card p-6 text-center">
-        <div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-mint text-5xl" aria-hidden="true">
-          🐼
-        </div>
-        <p :id="SECRET_TITLE_ID" class="mt-3 text-xl font-bold text-bamboo-deep">
-          {{ t('arcade.secret.title') }}
-        </p>
-        <p class="mt-2 text-base text-ink">{{ t('arcade.secret.body') }}</p>
-        <button
-          ref="secretGoRef"
-          type="button"
-          data-testid="home-secret-go"
-          class="mt-5 min-h-14 w-full rounded-full bg-bamboo-deep px-5 py-3 text-base font-bold text-white active:scale-95"
-          @click="closeSecret(); navigate('/arcade')"
-        >
-          {{ t('arcade.secret.go') }}
-        </button>
-        <button
-          type="button"
-          data-testid="home-secret-later"
-          class="mt-2 min-h-12 w-full rounded-full bg-cream px-5 py-3 text-base font-bold text-ink active:scale-95"
-          @click="closeSecret"
-        >
-          {{ t('arcade.secret.later') }}
-        </button>
-      </div>
-    </div>
+    <!-- 竹林小路彩蛋：连点竹竹 7 次才出现，单独懒加载（不占首屏预算） -->
+    <SecretEgg v-if="secretOpen" @close="closeSecret" />
 
     <!-- 存不上档要说出来：静默丢进度是最坏的结果 -->
     <p
@@ -315,6 +279,24 @@ onMounted(() => {
         @click="progress.dismissRest()"
       >
         {{ t('rest.ok') }}
+      </button>
+    </div>
+
+    <!-- 30 分钟收尾：20 分钟提醒之后才出现，只是"该休息啦"，不锁不惩罚 -->
+    <div
+      v-if="progress.restWrapDue"
+      data-testid="home-rest-wrap"
+      class="rounded-3xl border-2 border-bamboo bg-mint p-4"
+    >
+      <p class="text-base font-bold text-bamboo-deep">{{ t('rest.wrap.title') }}</p>
+      <p class="mt-1 text-base text-ink">{{ t('rest.wrap.body') }}</p>
+      <button
+        type="button"
+        data-testid="home-rest-wrap-ok"
+        class="mt-3 min-h-12 rounded-full bg-bamboo-deep px-6 py-2 text-base font-bold text-white active:scale-95"
+        @click="progress.dismissRestWrap()"
+      >
+        {{ t('rest.wrap.ok') }}
       </button>
     </div>
 
@@ -378,6 +360,9 @@ onMounted(() => {
         {{ careFlash }}
       </p>
     </div>
+
+    <!-- 累计里程碑 / 丰收日 / 请小鸟：首屏不急用，懒加载 -->
+    <HomeExtras @flash="flashCare" />
 
     <!-- 小愿望：点一下直接进对应的玩法 -->
     <button

@@ -7,5 +7,13 @@
     "bpm": 84,
     "jumps": 8,
     "zone": 0.3
-  }
+  },
+  "variants": [
+    {
+      "room": "yard",
+      "bpm": 96,
+      "jumps": 10,
+      "zone": 0.34
+    }
+  ]
 }

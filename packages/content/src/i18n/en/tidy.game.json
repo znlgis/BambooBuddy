@@ -72,5 +72,90 @@
         "y": 0.72
       }
     ]
-  }
+  },
+  "variants": [
+    {
+      "room": "playroom",
+      "bins": [
+        {
+          "kind": "ball",
+          "label": "Balls",
+          "color": "#e07a6a"
+        },
+        {
+          "kind": "block",
+          "label": "Blocks",
+          "color": "#7aa05c"
+        },
+        {
+          "kind": "book",
+          "label": "Books",
+          "color": "#e0b45f"
+        },
+        {
+          "kind": "car",
+          "label": "Cars",
+          "color": "#55798f"
+        }
+      ],
+      "items": [
+        {
+          "id": "car1",
+          "kind": "car",
+          "color": "#55798f",
+          "x": 0.14,
+          "y": 0.22
+        },
+        {
+          "id": "car2",
+          "kind": "car",
+          "color": "#e07a6a",
+          "x": 0.42,
+          "y": 0.14
+        },
+        {
+          "id": "ball1",
+          "kind": "ball",
+          "color": "#f2c14e",
+          "x": 0.68,
+          "y": 0.24
+        },
+        {
+          "id": "ball2",
+          "kind": "ball",
+          "color": "#7aa05c",
+          "x": 0.86,
+          "y": 0.36
+        },
+        {
+          "id": "block1",
+          "kind": "block",
+          "color": "#55798f",
+          "x": 0.2,
+          "y": 0.54
+        },
+        {
+          "id": "block2",
+          "kind": "block",
+          "color": "#e0b45f",
+          "x": 0.46,
+          "y": 0.6
+        },
+        {
+          "id": "book1",
+          "kind": "book",
+          "color": "#b5795f",
+          "x": 0.72,
+          "y": 0.56
+        },
+        {
+          "id": "book2",
+          "kind": "book",
+          "color": "#e07a6a",
+          "x": 0.36,
+          "y": 0.82
+        }
+      ]
+    }
+  ]
 }

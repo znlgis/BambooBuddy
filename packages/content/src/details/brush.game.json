@@ -54,5 +54,53 @@
       "kind": "rinse",
       "taps": 5
     }
-  }
+  },
+  "variants": [
+    {
+      "room": "bathroom",
+      "tool": "brush",
+      "rubs": 2,
+      "spots": [
+        {
+          "id": "m1",
+          "x": 0.18,
+          "y": 0.22,
+          "size": 1,
+          "kind": "germ"
+        },
+        {
+          "id": "m2",
+          "x": 0.46,
+          "y": 0.16,
+          "size": 0.8,
+          "kind": "germ"
+        },
+        {
+          "id": "m3",
+          "x": 0.74,
+          "y": 0.24,
+          "size": 1.2,
+          "kind": "germ"
+        },
+        {
+          "id": "m4",
+          "x": 0.3,
+          "y": 0.52,
+          "size": 1,
+          "kind": "germ"
+        },
+        {
+          "id": "m5",
+          "x": 0.62,
+          "y": 0.56,
+          "size": 0.9,
+          "kind": "germ"
+        }
+      ],
+      "finish": {
+        "kind": "rinse",
+        "taps": 4
+      }
+    }
+  ]
 }

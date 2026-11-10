@@ -36,5 +36,42 @@
         "comfort": "highfive"
       }
     ]
-  }
+  },
+  "variants": [
+    {
+      "room": "playroom",
+      "rounds": [
+        {
+          "target": "scared",
+          "question": "Bamboo is scared of the dark. Which face is it?",
+          "options": [
+            "scared",
+            "happy",
+            "sleepy"
+          ],
+          "comfort": "hug"
+        },
+        {
+          "target": "sleepy",
+          "question": "Bamboo is yawning. How does he feel?",
+          "options": [
+            "happy",
+            "angry",
+            "sleepy"
+          ],
+          "comfort": "pat"
+        },
+        {
+          "target": "happy",
+          "question": "Bamboo got a gift. Which face is smiling?",
+          "options": [
+            "sad",
+            "happy",
+            "angry"
+          ],
+          "comfort": "highfive"
+        }
+      ]
+    }
+  ]
 }

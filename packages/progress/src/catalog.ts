@@ -83,3 +83,47 @@ export function defaultEquipment(): { equipped: PetState['equipped']; room: PetS
 export function ownsItem(pet: Pick<PetState, 'unlocked'>, item: CatalogItem): boolean {
   return item.default === true || pet.unlocked.includes(item.id);
 }
+
+/* ------------------------------------------------------------------ *
+ * 累计里程碑（P1-4）：做到第 1/5/10/20/30/50 件小事时的一次成长纪念
+ * ------------------------------------------------------------------ */
+
+/**
+ * 里程碑的静态目录：和装扮目录一样，中英标题各一份（name / nameEn 的同一套口径）、不带 emoji。
+ *
+ * 为什么用「累计」而不是「连续」：连续天数会把一天没玩变成一次损失，4–8 岁理解不了这种惩罚；
+ * 累计只增不减，断签也一根竹笋不少。文案不写进 i18n 表：它是存档口径的一部分，
+ * 由 progress 包自己带着中英两份，界面按当前语言挑。
+ */
+export interface Milestone {
+  /** 累计做到多少件小事时达成 */
+  at: number;
+  title: string;
+  titleEn: string;
+}
+
+export const MILESTONES: readonly Milestone[] = [
+  { at: 1, title: '第一件小事', titleEn: 'First Little Thing' },
+  { at: 5, title: '五件小事', titleEn: 'Five Little Things' },
+  { at: 10, title: '十件小事', titleEn: 'Ten Little Things' },
+  { at: 20, title: '二十件小事', titleEn: 'Twenty Little Things' },
+  { at: 30, title: '三十件小事', titleEn: 'Thirty Little Things' },
+  { at: 50, title: '五十件小事', titleEn: 'Fifty Little Things' },
+];
+
+/** 安全的累计数：NaN / 负数 / 小数都夹成非负整数（坏档不参与判定） */
+function safeTotal(total: number): number {
+  return Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0;
+}
+
+/** 这个累计数已经跨过的里程碑（按 at 升序）；新玩家 / 坏输入返回空数组 */
+export function milestonesFor(total: number): Milestone[] {
+  const safe = safeTotal(total);
+  return MILESTONES.filter((milestone) => milestone.at <= safe);
+}
+
+/** 下一个还没达成的里程碑；全部达成后返回 null（到顶后仍然可以继续做小事） */
+export function nextMilestoneFor(total: number): Milestone | null {
+  const safe = safeTotal(total);
+  return MILESTONES.find((milestone) => milestone.at > safe) ?? null;
+}

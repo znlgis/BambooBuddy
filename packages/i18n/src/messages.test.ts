@@ -2,9 +2,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   createTranslator,
   ensureMessages,
+  ensureSurfaceMessages,
   fillTemplate,
   localeFromSearch,
   messages,
+  tableFor,
   zhCN,
 } from './index';
 import type { MessageParams } from './messages';
@@ -12,20 +14,35 @@ import type { MessageParams } from './messages';
 const CJK = /[\u4e00-\u9fff]/;
 
 beforeAll(async () => {
-  await ensureMessages('en');
+  await Promise.all([ensureMessages('en'), ensureSurfaceMessages()]);
 });
+
+/** 中文整表 = 常驻首屏的核心表 + 懒加载页面的 surface 表 */
+function mergedZh(): Record<string, string> {
+  const table = tableFor('zh-CN');
+  if (table === null) throw new Error('中文表不可用');
+  return table;
+}
 
 describe('界面文案表', () => {
   it('中英两份表的键集完全一致（类型之外再用运行期守一道）', () => {
-    expect(Object.keys(messages.en!).sort()).toEqual(Object.keys(zhCN).sort());
+    expect(Object.keys(messages.en!).sort()).toEqual(Object.keys(mergedZh()).sort());
+  });
+
+  it('核心表 + surface 表合起来覆盖全部中文键（拆表不许丢键）', () => {
+    for (const [key, value] of Object.entries(mergedZh())) {
+      expect(typeof value, key).toBe('string');
+    }
+    // 核心表确实比整表小：否则拆表没有意义
+    expect(Object.keys(zhCN).length).toBeLessThan(Object.keys(mergedZh()).length);
   });
 
   it('每条文案都不是空串', () => {
-    for (const table of Object.values(messages)) {
-      if (!table) continue;
-      for (const [key, value] of Object.entries(table)) {
-        expect(value.trim(), key).not.toHaveLength(0);
-      }
+    for (const [key, value] of Object.entries(mergedZh())) {
+      expect(value.trim(), key).not.toHaveLength(0);
+    }
+    for (const [key, value] of Object.entries(messages.en!)) {
+      expect(value.trim(), key).not.toHaveLength(0);
     }
   });
 
@@ -37,9 +54,9 @@ describe('界面文案表', () => {
   });
 
   it('英文不是中文的复制粘贴（抽样）', () => {
-    expect(messages.en!['app.title']).not.toBe(zhCN['app.title']);
-    expect(messages.en!['tasks.start']).not.toBe(zhCN['tasks.start']);
-    expect(messages.en!['hint.brush']).not.toBe(zhCN['hint.brush']);
+    expect(messages.en!['app.title']).not.toBe(mergedZh()['app.title']);
+    expect(messages.en!['tasks.start']).not.toBe(mergedZh()['tasks.start']);
+    expect(messages.en!['hint.brush']).not.toBe(mergedZh()['hint.brush']);
   });
 
   it('参数占位符能被替换，缺参数时保留原文而不是 undefined', () => {
@@ -82,5 +99,14 @@ describe('界面文案表', () => {
     // 中文常驻，永远可用；英文在上面的 beforeAll 里已加载成功
     expect(await ensureMessages('zh-CN')).toBe(true);
     expect(await ensureMessages('en')).toBe(true);
+  });
+
+  it('ensureSurfaceMessages 幂等且加载完成后取词器能取到 surface 键', async () => {
+    expect(await ensureSurfaceMessages()).toBe(true);
+    expect(await ensureSurfaceMessages()).toBe(true);
+    const tr = createTranslator('zh-CN');
+    // 挑一个只属于 surface 的键（任务页/装扮页等懒加载页面用）
+    expect(tr('dress.title')).toBe('竹竹的装扮');
+    expect(tr('parent.title')).toBe('家长中心');
   });
 });

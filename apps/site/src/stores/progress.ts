@@ -3,6 +3,10 @@ import type { TaskId } from '@bamboo/content';
 import type { ArcadeGameId, CareAction, ClothingSlot, RoomSlot, SaveData, Stars } from '@bamboo/game-kit';
 import { arcadeLevelFor } from '@bamboo/game-kit';
 import {
+  BIRD_FEED_COST,
+  isHarvestDay,
+  milestonesFor,
+  nextMilestoneFor,
   arcadeAvailable as isArcadeAvailable,
   arcadeStatus as readArcadeStatus,
   careAvailable as isCareAvailable,
@@ -16,6 +20,7 @@ import {
   xpToNextStage,
 } from '@bamboo/progress';
 import type {
+  BirdFeedOutcome,
   ArcadePlayOutcome,
   ArcadeSecretOutcome,
   CareOutcome,
@@ -32,6 +37,12 @@ import { progressManager } from '../shell/progress';
 
 /** 20 分钟：一天里玩到这么久就提醒孩子看看远处（一天只提醒一次） */
 export const REST_SECONDS = 20 * 60;
+/**
+ * 30 分钟：不是"强制下线"，是给这一天一个体面的收尾。
+ * 《移动互联网未成年人模式建设指南》以 30 分钟为连续使用提醒线（整机口径），
+ * 我们按善意对齐做一次"玩够啦"的收尾卡片，仍然不锁、不惩罚。
+ */
+export const REST_WRAP_SECONDS = 30 * 60;
 
 /** 响应式时钟的心跳：1 分钟。跨天、问候语、今日推荐都靠它自己过期，不用用户刷新 */
 const CLOCK_TICK_MS = 60_000;
@@ -125,10 +136,18 @@ export const useProgress = defineStore('progress', () => {
     return run(() => progressManager.refresh());
   }
 
-  function completeTask(taskId: TaskId, stars: Stars): Promise<CompletionOutcome | null> {
+  /**
+   * 完成一局：mistakes 来自 task:complete 事件（玩法侧只报数字，判定与奖励都在 progress）。
+   * 传 mistakes 让 manager 能算「比上次少错几次」，也让完成卡能夸一句进步。
+   */
+  function completeTask(
+    taskId: TaskId,
+    stars: Stars,
+    mistakes = 0,
+  ): Promise<CompletionOutcome | null> {
     const summary = getTaskSummary(taskId);
     if (!summary) return Promise.resolve(null);
-    return run(() => progressManager.completeTask(summary, stars));
+    return run(() => progressManager.completeTask(summary, stars, { mistakes }));
   }
 
   function care(action: CareAction): Promise<CareOutcome | null> {
@@ -183,6 +202,30 @@ export const useProgress = defineStore('progress', () => {
   const restDue = computed(
     () => todaySeconds.value >= REST_SECONDS && !todayRecord.value.restDismissed,
   );
+  /** 30 分钟收尾卡片当天只出现一次；存档字段由 W1 加入 restWrapDismissed 后接管 */
+  const restWrapDue = computed(
+    () => todaySeconds.value >= REST_WRAP_SECONDS && !todayRecord.value.restWrapDismissed,
+  );
+  /** 30 分钟收尾卡片「收下啦」：写进当天日记录，跨天自动重置 */
+  async function dismissRestWrap(): Promise<void> {
+    await run(() => progressManager.dismissRestWrap());
+  }
+
+  /** 请小鸟吃一根竹笋（竹笋的轻量消耗出口）：判定在 progress，竹笋不够不扣 */
+  function feedBird(): Promise<BirdFeedOutcome | null> {
+    return run(() => progressManager.feedBird());
+  }
+
+  /** 累计做到过多少件小事（跨任务、跨天、只增不减） */
+  const totalCompletions = computed(() => save.value.pet.totalCompletions);
+  /** 已经跨过的累计里程碑（家长页/小屋展示用，按 at 升序） */
+  const milestones = computed(() => milestonesFor(save.value.pet.totalCompletions));
+  /** 下一个还没达成的里程碑（到顶返回 null） */
+  const nextMilestone = computed(() => nextMilestoneFor(save.value.pet.totalCompletions));
+  /** 今天是不是丰收日（每周六，竹笋 ×2）：确定性日历判断，不是随机掉落 */
+  const harvestToday = computed(() => isHarvestDay(dayKey(now.value)));
+  /** 请过小鸟几次（竹笋消耗出口的计数） */
+  const birdFeeds = computed(() => save.value.pet.birdFeeds);
 
   /** 今天的小门：解锁了没有、今天玩了几局、还剩几局（界面与 e2e 都从这里读） */
   const arcadeStatus = computed(() => readArcadeStatus(save.value, now.value));
@@ -206,6 +249,11 @@ export const useProgress = defineStore('progress', () => {
 
   function streakFor(taskId: TaskId): number {
     return save.value.tasks[taskId]?.streak ?? 0;
+  }
+
+  /** 这个任务一共做到过几次（孩子看得到"我做过几次"，家长看得到坚持） */
+  function completionsFor(taskId: TaskId): number {
+    return save.value.tasks[taskId]?.completions ?? 0;
   }
 
   function hasSticker(taskId: TaskId): boolean {
@@ -276,6 +324,16 @@ export const useProgress = defineStore('progress', () => {
     weekSummary,
     todaySeconds,
     restDue,
+    restWrapDue,
+    dismissRestWrap,
+    feedBird,
+    completionsFor,
+    totalCompletions,
+    milestones,
+    nextMilestone,
+    harvestToday,
+    birdFeeds,
+    BIRD_FEED_COST,
     careAvailable,
     arcadeStatus,
     arcadeUnlocked,

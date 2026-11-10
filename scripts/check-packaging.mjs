@@ -69,6 +69,23 @@ if (tauri) {
   }
   if (tauri.bundle?.active === true) ok('bundle.active = true');
   else fail('tauri.conf.json 的 bundle.active 应为 true');
+
+  // P2-4：csp: null 等于关掉 WebView 的 CSP，等于把 XSS 风险留给"内容都是我们写的"这个假设。
+  // 这里只做静态断言（本机没有 WebView2 运行时）；真正的 Phaser / WebAudio / TTS 验证需要真机跑。
+  const csp = tauri.app?.security?.csp;
+  if (typeof csp === 'string' && csp.trim().length > 0) {
+    ok('CSP 已收紧（不再是 null）');
+    if (!csp.includes('unsafe-eval')) ok('CSP 不含 unsafe-eval');
+    else fail('CSP 不能包含 unsafe-eval（Phaser 4 与站点产物都不需要 eval）');
+    if (csp.includes("default-src 'self'")) ok("CSP 含 default-src 'self'");
+    else fail("CSP 缺少 default-src 'self'");
+    if (csp.includes("script-src 'self'")) ok("CSP 含 script-src 'self'");
+    else fail("CSP 缺少 script-src 'self'");
+    if (csp.includes("connect-src 'none'")) ok("CSP 含 connect-src 'none'（应用不联网）");
+    else fail("CSP 缺少 connect-src 'none'（本项目不联网，不应放开网络出口）");
+  } else {
+    fail('tauri.conf.json 的 app.security.csp 不能为 null 或空（P2-4）');
+  }
 }
 if (cargo !== null) {
   if (cargo.includes('tauri-build') && cargo.includes('tauri =')) {
@@ -87,6 +104,26 @@ if (cap !== null) {
   else fail('capacitor.config.ts 缺 appId');
   if (cap.includes("webDir: '../site/dist'")) ok('webDir 指向站点产物 apps/site/dist');
   else fail("capacitor.config.ts 的 webDir 应为 '../site/dist'");
+
+  // P2-5：Capacitor 8 / Android 15 强制 edge-to-edge，必须显式声明系统栏安全区策略；
+  // 站点侧再用 env(safe-area-inset-*) 给底栏让位（这两处是一对，缺一处就会压住手势条）。
+  if (/SystemBars[\s\S]*insetsHandling/.test(cap)) ok('SystemBars 安全区策略已显式配置（P2-5）');
+  else fail('capacitor.config.ts 需要显式配置 plugins.SystemBars.insetsHandling（P2-5）');
+  if (cap.includes("initialViewportFitValueHint: 'cover'")) ok('initialViewportFitValueHint = cover');
+  else fail("capacitor.config.ts 的 SystemBars.initialViewportFitValueHint 应为 'cover'");
+}
+
+// 安全区的网页侧前提：viewport-fit=cover + #app 的 env(safe-area-inset-*) 留白。
+// 这两处由站点维护，打包体检只负责"改坏时在本地就红"，避免等真机才发现底栏被手势条压住。
+const indexHtml = readText('apps/site/index.html');
+if (indexHtml !== null) {
+  if (indexHtml.includes('viewport-fit=cover')) ok('index.html 声明 viewport-fit=cover（安全区生效前提）');
+  else fail('apps/site/index.html 的 viewport 需要 viewport-fit=cover（否则 env(safe-area-inset-*) 恒为 0）');
+}
+const siteCss = readText('apps/site/src/style.css');
+if (siteCss !== null) {
+  if (/env\(safe-area-inset-bottom/.test(siteCss)) ok('底栏安全区留白（env(safe-area-inset-bottom)）');
+  else fail('apps/site/src/style.css 缺少 env(safe-area-inset-bottom) 安全区留白');
 }
 
 const manifest = readText('apps/mobile/android/app/src/main/AndroidManifest.xml');

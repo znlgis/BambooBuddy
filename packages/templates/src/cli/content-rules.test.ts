@@ -4,6 +4,7 @@ import {
   checkBannedWords,
   checkInventory,
   checkLevelScript,
+  checkLevelVariants,
   checkNoCjk,
   type ContentTask,
   type InventoryTask,
@@ -241,6 +242,96 @@ describe('checkLevelScript：每个模板都有好/坏两条', () => {
   });
 });
 
+describe('checkLevelVariants：第 2 套及以后同样要过校验', () => {
+  // 第二套必须与第一套"明显不同"：这里只要求合法且不重复
+  const feedSecond = {
+    room: 'kitchen',
+    needKinds: ['bamboo', 'veg', 'protein'],
+    foods: [
+      { id: 'bamboo', kind: 'bamboo', bites: 1, x: 0.16, y: 0.3 },
+      { id: 'broccoli', kind: 'veg', bites: 2, x: 0.4, y: 0.34 },
+      { id: 'egg', kind: 'protein', bites: 2, x: 0.64, y: 0.3 },
+      { id: 'fish', kind: 'protein', bites: 1, x: 0.2, y: 0.7 },
+    ],
+  };
+
+  function feedTask(variants: unknown[] | undefined): ContentTask {
+    return { id: 'feed', template: 'feed', levelScript: feedGood, variants };
+  }
+
+  it('两套都合法时零 issue', () => {
+    expect(checkLevelVariants(feedTask([feedSecond]), 'zh-CN')).toEqual([]);
+  });
+
+  it('只有 1 套（旧格式）会被新标准拦下', () => {
+    const issues = checkLevelVariants(feedTask(undefined), 'zh-CN');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain('至少 2 套');
+  });
+
+  it('第 2 套过不了 schema 时报错并带「第2套」定位', () => {
+    const broken = { ...feedSecond, foods: [] };
+    const issues = checkLevelVariants(feedTask([broken]), 'zh-CN');
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues[0]).toContain('第2套');
+    expect(issues[0]).toContain('foods');
+  });
+
+  it('第 2 套违反语义规则（均衡目标没有对应食物）也要报', () => {
+    const unbalanced = { ...feedSecond, needKinds: ['grain'] };
+    const issues = checkLevelVariants(feedTask([unbalanced]), 'zh-CN');
+    expect(issues.some((issue) => issue.includes('第2套') && issue.includes('grain'))).toBe(true);
+  });
+
+  it('两套一模一样必须报错（变体要真的不一样）', () => {
+    const issues = checkLevelVariants(feedTask([feedGood]), 'zh-CN');
+    expect(issues.some((issue) => issue.includes('完全相同'))).toBe(true);
+  });
+
+  it('属性书写顺序不同但内容相同的两套也算重复', () => {
+    const reordered = {
+      foods: feedGood.foods,
+      needKinds: feedGood.needKinds,
+      room: feedGood.room,
+    };
+    const issues = checkLevelVariants(feedTask([reordered]), 'zh-CN');
+    expect(issues.some((issue) => issue.includes('完全相同'))).toBe(true);
+  });
+
+  it('英文变体里残留中文必须报错', () => {
+    const chineseSecond = {
+      ...feedSecond,
+      foods: feedSecond.foods.map((food) => ({ ...food, id: food.id })),
+    };
+    const chineseQuestion = {
+      room: 'bedroom',
+      rounds: [
+        { target: 'sad', question: '竹竹怎么了？', options: ['happy', 'sad', 'angry'], comfort: 'hug' },
+        { target: 'happy', question: 'Bamboo is smiling — which face?', options: ['happy', 'sleepy', 'sad'], comfort: 'highfive' },
+      ],
+    };
+    // levelScript 用英文合法内容，第 2 套残留中文
+    const pickTask: ContentTask = {
+      id: 'emotion',
+      template: 'pick',
+      levelScript: {
+        room: 'bedroom',
+        rounds: [
+          { target: 'sad', question: 'How does Bamboo feel now?', options: ['happy', 'sad', 'angry'], comfort: 'hug' },
+          { target: 'happy', question: 'Which face is smiling?', options: ['happy', 'sleepy', 'sad'], comfort: 'highfive' },
+        ],
+      },
+      variants: [chineseQuestion],
+    };
+    const issues = checkLevelVariants(pickTask, 'en');
+    expect(issues.some((issue) => issue.includes('第 2 套') && issue.includes('中文'))).toBe(true);
+    // 中文 locale 不会因为"中文"文案报错（只查 schema 与语义）
+    expect(checkLevelVariants(pickTask, 'zh-CN')).toEqual([]);
+    // 英文变体合法时不报中文问题（feed 第 2 套没有可读文案）
+    expect(checkLevelVariants(feedTask([chineseSecond]), 'en')).toEqual([]);
+  });
+});
+
 describe('checkBannedWords / checkNoCjk', () => {
   const copy = {
     id: 'feed',
@@ -302,6 +393,21 @@ describe('checkInventory：清单级约束', () => {
     expect(issues.some((issue) => issue.includes('任务数量不对'))).toBe(true);
     expect(issues.some((issue) => issue.includes('时段只有'))).toBe(true);
     expect(issues.some((issue) => issue.includes('模板 '))).toBe(true);
+  });
+
+  it('中英关卡套数不一致必须报错', () => {
+    const ids = ['brush', 'wash', 'feed', 'dress', 'bath', 'sleep', 'tidy', 'sport', 'emotion', 'learn'];
+    const templates: TemplateId[] = ['scrub', 'scrub', 'feed', 'dress', 'scrub', 'order', 'tidy', 'rhythm', 'pick', 'learn'];
+    const slots = ['morning', 'noon', 'evening'] as const;
+    const withVariants = (id: string, variants: unknown[] | undefined): InventoryTask => ({
+      ...inventoryTask(id, 'T-' + id, slots, templates[ids.indexOf(id)]!),
+      variants,
+    });
+    const tasks = ids.map((id) => withVariants(id, [{ second: true }]));
+    const tasksEn = ids.map((id, index) => withVariants(id, index === 0 ? [{ second: true }, { third: true }] : [{ second: true }]));
+    const issues = checkInventory(tasks, tasksEn);
+    expect(issues.some((issue) => issue.includes('中英关卡套数不一致'))).toBe(true);
+    expect(issues.filter((issue) => issue.includes('中英关卡套数不一致'))).toHaveLength(1);
   });
 
   it('标题重复与英文标题未翻都会报', () => {

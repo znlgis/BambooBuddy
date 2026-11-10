@@ -1,6 +1,7 @@
 import type { GameContext } from '@bamboo/game-kit';
 import {
   BaseScene,
+  CSS,
   THEME,
   createDragController,
   createHand,
@@ -12,11 +13,12 @@ import {
   roundRect,
   sparkleAt,
   springBack,
+  textStyle,
 } from '@bamboo/phaser-kit';
 import type { DragController, PandaAccessories, PandaMood } from '@bamboo/phaser-kit';
-import { createDressState, dressComplete, dressItem, tryDress } from './dress.logic';
+import { createDressState, dressComplete, dressItem, stepProgress, tryDress } from './dress.logic';
 import type { ClothingKind, DressLevel } from './dress.logic';
-import { SCENE_KEYS } from './layout';
+import { SCENE_KEYS, STEP_DOTS, stepDotsLeft } from './layout';
 
 /**
  * 穿衣：把台面上的衣服拖到竹竹身上该去的地方。
@@ -118,6 +120,8 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
     private homes = new Map<string, { x: number; y: number }>();
     private hintRing: Phaser.GameObjects.Graphics | null = null;
     private hand: Phaser.GameObjects.Graphics | null = null;
+    private progressG: Phaser.GameObjects.Graphics | null = null;
+    private progressText: Phaser.GameObjects.Text | null = null;
     private finished = false;
     /** 上一次真的动过的时间：卡住 9 秒就把正确槽位亮出来 */
     private lastActionAt = 0;
@@ -143,6 +147,7 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
       this.drawPandaBody();
       this.drawItems();
       this.drawHeader(ctx.task.title);
+      this.drawProgress();
       this.fadeIn();
 
       this.lastActionAt = this.ctx.services.now();
@@ -312,7 +317,40 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
       });
 
       this.redrawPanda('happy');
+      this.redrawProgress();
       if (dressComplete(this.state, level)) this.complete();
+    }
+
+    // ---------------- 步骤进度 ----------------
+
+    /**
+     * 顶部"第 n 步 / 共 m 步"进度点：给孩子一个"还剩多少"的可见答案，
+     * 代替倒计时带来的压力（README 的"形象化进度"）。
+     */
+    private drawProgress(): void {
+      this.progressG = this.add.graphics().setDepth(24);
+      this.progressText = this.add
+        .text(this.W / 2, 226, '', textStyle(30, CSS.inkSoft, true))
+        .setOrigin(0.5)
+        .setDepth(25);
+      this.redrawProgress();
+    }
+
+    private redrawProgress(): void {
+      const g = this.progressG;
+      if (!g) return;
+      g.clear();
+      const done = level.items.filter((item) => this.state[item.id] === item.slot).length;
+      const { index, total } = stepProgress(this.state, level);
+      const startX = stepDotsLeft(total, this.W);
+      for (let i = 0; i < total; i += 1) {
+        // 已完成 = 实心，未完成 = 空心：不靠颜色单独传达信息
+        g.fillStyle(i < done ? THEME.gold : THEME.card, 1);
+        g.fillCircle(startX + i * STEP_DOTS.gap, STEP_DOTS.y, STEP_DOTS.radius);
+        g.lineStyle(STEP_DOTS.outline, THEME.outline, 1);
+        g.strokeCircle(startX + i * STEP_DOTS.gap, STEP_DOTS.y, STEP_DOTS.radius);
+      }
+      this.progressText?.setText(this.tr('game.stepProgress', { n: index, total }));
     }
 
     // ---------------- 槽位发光 ----------------
@@ -359,7 +397,7 @@ export function createDressScene(ctx: GameContext, level: DressLevel): Phaser.Ty
       if (!next || !home) return;
 
       this.showSlotHint(next.slot);
-      if (!this.hand) this.hand = createHand(this, home.x, home.y + 46, 1.15);
+      if (!this.hand) this.hand = createHand(this, home.x, home.y + 46, 1.15, !this.reducedMotion);
       this.showHint(ctx.task.tip, 2600, 300);
       // 提示亮一会儿就收：常亮会变成"照着做"，孩子就不看竹竹了
       const ring = this.hintRing;

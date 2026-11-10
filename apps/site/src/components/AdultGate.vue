@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue';
+import { ref } from 'vue';
+import { useModal } from '../shell/modal';
 import { useI18n } from '../shell/useI18n';
 
 /**
@@ -15,7 +16,11 @@ const props = defineProps<{ question: string; answer: number }>();
 const emit = defineEmits<{ (e: 'pass'): void; (e: 'cancel'): void }>();
 
 const { t } = useI18n();
+const dialog = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
+
+// 浮层是模态：焦点落进输入框、Esc 取消、关掉后焦点还回触发它的那个按钮
+useModal(dialog, () => emit('cancel'));
 const value = ref('');
 const wrong = ref(false);
 const lockedUntil = ref(0);
@@ -48,20 +53,17 @@ function submit(): void {
   inputRef.value?.focus();
 }
 
-onMounted(() => {
-  void nextTick(() => inputRef.value?.focus());
-});
 </script>
 
 <template>
   <div
+    ref="dialog"
     role="dialog"
     aria-modal="true"
     data-testid="adult-gate"
     :data-question="question"
     :data-tries="tries"
     class="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 px-6"
-    @keydown.esc="emit('cancel')"
   >
     <div class="w-full max-w-sm rounded-3xl border-2 border-bamboo bg-card p-6">
       <p class="text-xl font-bold text-bamboo-deep">{{ t('gate.title') }}</p>

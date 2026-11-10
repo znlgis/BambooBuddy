@@ -16,9 +16,9 @@ import {
   textStyle,
 } from '@bamboo/phaser-kit';
 import type { DragController } from '@bamboo/phaser-kit';
-import { createTidyState, tidyComplete, tidyItem, tryTidy } from './tidy.logic';
+import { createTidyState, stepProgress, tidyComplete, tidyItem, tryTidy } from './tidy.logic';
 import type { TidyLevel, ToyKind } from './tidy.logic';
-import { SCENE_KEYS, TIDY_LAYOUT } from './layout';
+import { SCENE_KEYS, STEP_DOTS, TIDY_LAYOUT, stepDotsLeft, tidyBinPositions } from './layout';
 
 /**
  * 整理：把地上的玩具按类别送回箱子。
@@ -60,6 +60,8 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
     private homes = new Map<string, { x: number; y: number }>();
     private hintRing: Phaser.GameObjects.Graphics | null = null;
     private hand: Phaser.GameObjects.Graphics | null = null;
+    private progressG: Phaser.GameObjects.Graphics | null = null;
+    private progressText: Phaser.GameObjects.Text | null = null;
     private finished = false;
     /** 上一次真的动过的时间：卡住 9 秒就把正确箱子亮出来 */
     private lastActionAt = 0;
@@ -85,6 +87,7 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
       this.drawBins();
       this.drawToys();
       this.drawHeader(ctx.task.title);
+      this.drawProgress();
       this.fadeIn();
 
       this.lastActionAt = this.ctx.services.now();
@@ -113,9 +116,13 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
     }
 
     private drawBins(): void {
-      for (const bin of level.bins) {
-        const point = TIDY_LAYOUT.bins[bin.kind];
-        const size = BIN_SIZE[bin.kind];
+      // 4 个箱子（第二套关卡多一个「小车」）一排摆不下，走紧凑等距布局；
+      // 2–3 个箱子仍用固定坐标（e2e 的真实拖拽按那份坐标算落点）
+      const points = tidyBinPositions(level.bins.map((bin) => bin.kind));
+      level.bins.forEach((bin, index) => {
+        const point = points[index]!;
+        // 紧凑排（4 箱）统一箱体尺寸，否则 190 宽的箱子在 188 的间距下会互相压住
+        const size = level.bins.length >= 4 ? { w: 166, h: 130 } : BIN_SIZE[bin.kind];
         const art = this.add.graphics().setDepth(10);
         drawBin(art, bin.kind, parseHex(bin.color), point.x, point.y, size.w, size.h);
         // 箱子下面的名字：靠图标认类别，字只是备份（不识字的孩子也能看图）
@@ -124,7 +131,7 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
           .setOrigin(0.5)
           .setDepth(12);
         this.bins.set(bin.kind, { x: point.x, y: point.y, ...size, art });
-      }
+      });
     }
 
     private drawToys(): void {
@@ -230,7 +237,40 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
         this.tweens.add({ targets: node, scale: 0.28, alpha: 0, duration: 240, onComplete: () => node.destroy() });
       }
 
+      this.redrawProgress();
       if (tidyComplete(this.state, level)) this.complete();
+    }
+
+    // ---------------- 步骤进度 ----------------
+
+    /**
+     * 顶部"第 n 步 / 共 m 步"进度点：给孩子一个"还剩多少"的可见答案，
+     * 代替倒计时带来的压力（README 的"形象化进度"）。
+     */
+    private drawProgress(): void {
+      this.progressG = this.add.graphics().setDepth(24);
+      this.progressText = this.add
+        .text(this.W / 2, 226, '', textStyle(30, CSS.inkSoft, true))
+        .setOrigin(0.5)
+        .setDepth(25);
+      this.redrawProgress();
+    }
+
+    private redrawProgress(): void {
+      const g = this.progressG;
+      if (!g) return;
+      g.clear();
+      const done = level.items.filter((item) => this.state.sorted[item.id] === item.kind).length;
+      const { index, total } = stepProgress(this.state, level);
+      const startX = stepDotsLeft(total, this.W);
+      for (let i = 0; i < total; i += 1) {
+        // 已完成 = 实心，未完成 = 空心：不靠颜色单独传达信息
+        g.fillStyle(i < done ? THEME.gold : THEME.card, 1);
+        g.fillCircle(startX + i * STEP_DOTS.gap, STEP_DOTS.y, STEP_DOTS.radius);
+        g.lineStyle(STEP_DOTS.outline, THEME.outline, 1);
+        g.strokeCircle(startX + i * STEP_DOTS.gap, STEP_DOTS.y, STEP_DOTS.radius);
+      }
+      this.progressText?.setText(this.tr('game.stepProgress', { n: index, total }));
     }
 
     // ---------------- 提示 ----------------
@@ -251,6 +291,8 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
     }
 
     private showBinHint(kind: ToyKind): void {
+      // 放错箱子 → 320ms 后才亮正确箱子；这段窗口里如果已经完成，就不要再画提示圈
+      if (this.finished) return;
       const bin = this.bins.get(kind);
       if (!bin) return;
       this.clearHintRing();
@@ -293,7 +335,7 @@ export function createTidyScene(ctx: GameContext, level: TidyLevel): Phaser.Type
       const home = next ? this.homes.get(next.id) : undefined;
       if (!next || !home) return;
       this.showBinHint(next.kind);
-      if (!this.hand) this.hand = createHand(this, home.x, home.y + 40, 1.15);
+      if (!this.hand) this.hand = createHand(this, home.x, home.y + 40, 1.15, !this.reducedMotion);
       this.showHint(ctx.task.tip, 2600, 300);
     }
 

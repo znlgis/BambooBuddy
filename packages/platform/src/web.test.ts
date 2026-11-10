@@ -3,13 +3,13 @@ import { SAVE_SCHEMA_VERSION } from '@bamboo/game-kit';
 import { emptySave } from '@bamboo/progress';
 import {
   createIdbProgressStore,
+  createLazyAudioBus,
   createLocalTelemetry,
   createVisibilityLifecycle,
-  createWebAudioBus,
   openIdbDatabase,
-  speechTimeoutMs,
   StorageUnavailableError,
 } from './web';
+import { createWebAudioBus, speechTimeoutMs } from './web-audio';
 import type { OpenResult } from './web';
 
 /**
@@ -72,11 +72,18 @@ class FakeTransaction {
     this.error = cause;
     this.onerror?.();
   }
+
+  abort(cause = new Error('事务被中止')): void {
+    this.error = cause;
+    this.onabort?.();
+  }
 }
 
 interface FakeDbOptions {
   /** 读写事务一创建就抛错（模拟存储被系统禁用） */
   transactionThrows?: boolean;
+  /** 抛出的错误名：'InvalidStateError' 用来模拟"连接已被关闭"（别的标签页升级） */
+  transactionThrowsName?: string;
 }
 
 function makeDb(options: FakeDbOptions = {}) {
@@ -85,7 +92,11 @@ function makeDb(options: FakeDbOptions = {}) {
   const db = {
     objectStoreNames: { contains: (): boolean => true },
     transaction: (): FakeTransaction => {
-      if (options.transactionThrows === true) throw new Error('transaction 不可用');
+      if (options.transactionThrows === true) {
+        const cause = new Error('transaction 不可用');
+        if (options.transactionThrowsName !== undefined) cause.name = options.transactionThrowsName;
+        throw cause;
+      }
       const tx = new FakeTransaction(request);
       transactions.push(tx);
       return tx;
@@ -128,7 +139,7 @@ describe('IndexedDB 存档：正常 / open 不可用 / 写失败', () => {
     expect(store.health()).toEqual({ state: 'ready', issue: null, failures: 0 });
   });
 
-  it('load 返回坏数据：退回空档而不是抛错（坏档不能挡住启动）', async () => {
+  it('load 返回可 sanitize 的坏数据：由 migrate 逐字段兜底成空档（这不是读失败）', async () => {
     const fake = makeDb();
     const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
 
@@ -142,12 +153,94 @@ describe('IndexedDB 存档：正常 / open 不可用 / 写失败', () => {
     expect(save.schemaVersion).toBe(SAVE_SCHEMA_VERSION);
   });
 
-  it('load：读写事务一创建就抛错时同样退回空档', async () => {
+  it('新玩家（没有任何存档记录）：resolve 空档，不是读失败', async () => {
+    const fake = makeDb();
+    const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
+
+    const loading = store.load();
+    await flush();
+    // get() 的结果是 undefined：设备上还没存过档，不能 reject（否则每次首启都被当成"存档读不出来"）
+    fake.request.succeed(undefined);
+    await expect(loading).resolves.toMatchObject({ pet: { shoots: 3 } });
+  });
+
+  it('事务一创建就失败：load 必须 reject（读档失败当"新玩家"会让第一次写入覆盖真实进度）', async () => {
     const fake = makeDb({ transactionThrows: true });
     const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
 
-    const save = await store.load();
-    expect(save.pet.shoots).toBe(3);
+    const error = await rejection(store.load());
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('transaction 不可用');
+  });
+
+  it('读请求报错：load reject，交给上层决定只读/提示家长', async () => {
+    const fake = makeDb();
+    const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
+
+    const loading = rejection(store.load());
+    await flush();
+    fake.request.fail(new Error('读取存档失败'));
+
+    const error = await loading;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('读取存档失败');
+  });
+
+  it('只读事务被中止：load reject，不会永远挂着', async () => {
+    const fake = makeDb();
+    const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
+
+    const loading = rejection(store.load());
+    await flush();
+    fake.transactions[0].abort();
+
+    const error = await loading;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('事务被中止');
+  });
+
+  it('迁移抛错：load reject（坏档不能让上层以为进度还在）', async () => {
+    const fake = makeDb();
+    const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
+
+    const loading = rejection(store.load());
+    await flush();
+    // 读属性就抛的坏对象：migrate 无法 sanitize，只能算读失败
+    const bomb = new Proxy(
+      {},
+      {
+        get(): never {
+          throw new Error('坏档：读不出来');
+        },
+        has(): boolean {
+          return true;
+        },
+      },
+    );
+    fake.request.succeed(bomb);
+
+    const error = await loading;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('坏档：读不出来');
+  });
+
+  it('两次连接都失效：load reject 而不是回空档（保护磁盘上的存档）', async () => {
+    const closed = makeDb({ transactionThrows: true, transactionThrowsName: 'InvalidStateError' });
+    const alsoClosed = makeDb({
+      transactionThrows: true,
+      transactionThrowsName: 'InvalidStateError',
+    });
+    let openings = 0;
+    const open = vi.fn(async (): Promise<OpenResult> => {
+      openings += 1;
+      return { db: openings === 1 ? closed.db : alsoClosed.db, issue: null };
+    });
+    const store = createIdbProgressStore({ open });
+
+    const error = await rejection(store.load());
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('连接连续失效');
+    expect(open).toHaveBeenCalledTimes(2);
   });
 
   it('save：事务 complete 后 resolve', async () => {
@@ -218,6 +311,82 @@ describe('IndexedDB 存档：正常 / open 不可用 / 写失败', () => {
     expect(store.health()).toEqual({ state: 'ready', issue: null, failures: 1 });
   });
 
+  it('连接被别的标签页升级关闭（onversionchange）：丢掉缓存并重连，读回真实存档', async () => {
+    const first = makeDb();
+    const second = makeDb();
+    let openings = 0;
+    const open = vi.fn(async (): Promise<OpenResult> => {
+      openings += 1;
+      return openings === 1 ? { db: first.db, issue: null } : { db: second.db, issue: null };
+    });
+    const store = createIdbProgressStore({ open });
+
+    const loading = store.load();
+    await flush();
+    first.request.succeed({ pet: { shoots: 7 } });
+    await expect(loading).resolves.toMatchObject({ pet: { shoots: 7 } });
+    expect(store.health().state).toBe('ready');
+
+    // 另一个标签页请求升级 → 浏览器回调 onversionchange，连接关闭
+    (first.db as unknown as { onversionchange: (() => void) | null }).onversionchange?.();
+    // 缓存必须失效：否则下一次 load 会在已关闭的连接上开事务，被 catch 成"空档"
+    expect(store.health().state).toBe('degraded');
+
+    const again = store.load();
+    await flush();
+    second.request.succeed({ pet: { shoots: 11 } });
+    await expect(again).resolves.toMatchObject({ pet: { shoots: 11 } });
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(store.health()).toEqual({ state: 'ready', issue: null, failures: 0 });
+  });
+
+  it('连接在开事务时已失效（InvalidStateError）：load 重连一次，读回存档而不是回空档', async () => {
+    const closed = makeDb({ transactionThrows: true, transactionThrowsName: 'InvalidStateError' });
+    const healthy = makeDb();
+    let openings = 0;
+    const open = vi.fn(async (): Promise<OpenResult> => {
+      openings += 1;
+      return openings === 1 ? { db: closed.db, issue: null } : { db: healthy.db, issue: null };
+    });
+    const store = createIdbProgressStore({ open });
+
+    const loading = store.load();
+    await flush();
+    healthy.request.succeed({ pet: { shoots: 5 } });
+    await expect(loading).resolves.toMatchObject({ pet: { shoots: 5 } });
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('连接失效（InvalidStateError）时 save 重连一次，第二次写入真正落盘', async () => {
+    const closed = makeDb({ transactionThrows: true, transactionThrowsName: 'InvalidStateError' });
+    const healthy = makeDb();
+    let openings = 0;
+    const open = vi.fn(async (): Promise<OpenResult> => {
+      openings += 1;
+      return openings === 1 ? { db: closed.db, issue: null } : { db: healthy.db, issue: null };
+    });
+    const store = createIdbProgressStore({ open });
+
+    const saving = store.save(emptySave(Date.now()));
+    await flush();
+    healthy.transactions[0].complete();
+    await expect(saving).resolves.toBeUndefined();
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('配额满（不是连接失效）不会重复写第二遍：失败原样上抛', async () => {
+    const fake = makeDb();
+    const store = createIdbProgressStore({ open: async () => ({ db: fake.db, issue: null }) });
+
+    const outcome = rejection(store.save(emptySave(Date.now())));
+    await flush();
+    fake.transactions[0].fail(new Error('QuotaExceededError'));
+
+    await expect(outcome).resolves.toBeInstanceOf(Error);
+    // 只有一条事务：没有把同样的失败写第二次
+    expect(fake.transactions).toHaveLength(1);
+  });
+
   it('没有 IndexedDB（unsupported）：永久降级，不做无意义的反复重试', async () => {
     let clock = 0;
     let attempts = 0;
@@ -284,6 +453,39 @@ describe('真实 openIdbDatabase：超时兜底与不缓存结论', () => {
     requests[0].onblocked?.();
 
     await expect(result).resolves.toEqual({ db: null, issue: 'blocked' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('onblocked 之后 open 又成功了：把没人用的连接关掉，不挡住别人的升级', async () => {
+    vi.useFakeTimers();
+    const requests: FakeOpenRequest[] = [];
+    let closes = 0;
+    vi.stubGlobal('indexedDB', {
+      open: (): FakeOpenRequest => {
+        const request: FakeOpenRequest = {
+          result: {
+            objectStoreNames: { contains: () => false },
+            close: () => {
+              closes += 1;
+            },
+          } as unknown as IDBDatabase,
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+          onblocked: null,
+        };
+        requests.push(request);
+        return request;
+      },
+    });
+
+    const result = openIdbDatabase();
+    requests[0].onblocked?.();
+    await expect(result).resolves.toEqual({ db: null, issue: 'blocked' });
+
+    // 对方让出后请求继续成功：这条连接没人用，必须关掉（否则我们变成新的"占着不放"）
+    requests[0].onsuccess?.();
+    expect(closes).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -435,6 +637,26 @@ describe('TTS：SpeechHandle.done 契约', () => {
 /* ------------------------------------------------------------------ *
  * 遥测与生命周期（同属平台出口，顺手锁住"不上报"与"真切换才回调"）
  * ------------------------------------------------------------------ */
+
+describe('首屏音频代理：实现懒加载，但 AudioBus 契约不变', () => {
+  it('静音状态同步可读；实现在加载途中时 speak 的 done 仍然 resolve', async () => {
+    vi.stubGlobal('window', {});
+    const bus = createLazyAudioBus();
+    // 设置页在首帧就会读/写静音开关：不能等音频 chunk 下载完
+    expect(bus.isMuted()).toBe(false);
+    bus.setMuted(true);
+    expect(bus.isMuted()).toBe(true);
+    await expect(bus.speak('你好', 'zh-CN').done).resolves.toBe('unavailable');
+
+    // 未静音：等 ./web-audio 到位后走真实实现（这个环境没有 Web Speech → unavailable）
+    const warm = createLazyAudioBus();
+    await expect(warm.speak('你好', 'zh-CN').done).resolves.toBe('unavailable');
+    // 音效只是装饰、不参与判定：实现到位前后调用都不能抛
+    expect(() => warm.play('tap')).not.toThrow();
+    expect(() => warm.tone(440, 100)).not.toThrow();
+    expect(() => warm.stopSpeech()).not.toThrow();
+  });
+});
 
 describe('本地遥测', () => {
   it('只留最近 500 条，recent 可限量；flush 不发任何请求', async () => {

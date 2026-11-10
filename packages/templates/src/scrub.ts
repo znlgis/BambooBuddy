@@ -555,9 +555,11 @@ export function createScrubScene(ctx: GameContext, level: ScrubLevel): Phaser.Ty
       }
       // 用墙钟而不是 Phaser 计时器：Phaser 在场景刚启动的 120 帧里会压缩 delta，
       // 低帧率设备（含无头浏览器）上 2 秒的自动演示会被拉成 5 秒，验收会误判超时。
-      // 刷牙 12 下 + 冲水 5 下 ≈ 2 秒；洗澡 16 下 + 5 下 ≈ 2.5 秒，正好在 2–4 秒。
+      // 当前内容 17–21 步 ≈ 2 秒；schema 上限是 12 点 × 5 次 + 12 下收尾 = 72 步，
+      // 所以步数多时按总步数压缩间隔，别让自动演示拖成 8 秒的长跑（上限 1.6 秒的推进）。
+      const gap = steps.length > 24 ? Math.max(40, Math.floor(1600 / steps.length)) : 110;
       steps.forEach((step, index) => {
-        this.autoplayTimers.push(window.setTimeout(step, 150 + index * 110));
+        this.autoplayTimers.push(window.setTimeout(step, 150 + index * gap));
       });
     }
   };

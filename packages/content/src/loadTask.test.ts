@@ -57,6 +57,12 @@ describe('selectLevelScript：确定性选套（纯函数）', () => {
     expect(selectLevelScript(source, 'feed', { variantIndex: Number.POSITIVE_INFINITY })).toBe('first');
   });
 
+  it('坏 variants（不是数组）当作没有变体，不是崩溃', () => {
+    const source = { levelScript: 'only', variants: 'oops' } as unknown as VariantSource;
+    expect(selectLevelScript(source, 'feed', { dayKey: '2026-11-10' })).toBe('only');
+    expect(selectLevelScript(source, 'feed', { variantIndex: 1 })).toBe('only');
+  });
+
   it('没有变体的源永远第 1 套，不会出现负数下标', () => {
     const source: VariantSource = { levelScript: 'only' };
     expect(selectLevelScript(source, 'feed', { dayKey: '2026-11-10' })).toBe('only');

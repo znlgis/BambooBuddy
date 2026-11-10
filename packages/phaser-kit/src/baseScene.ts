@@ -171,7 +171,8 @@ export abstract class BaseScene extends Phaser.Scene {
   }
 
   protected createHandAt(x: number, y: number, scale = 1.1): Phaser.GameObjects.Graphics {
-    return createHand(this, x, y, scale);
+    // reduced-motion：手的位置保留（孩子仍看得到"从这里拖"），但不做无限摆动
+    return createHand(this, x, y, scale, !this.reducedMotion);
   }
 
   /** 点哪都行（大点击区 + 连点保护） */

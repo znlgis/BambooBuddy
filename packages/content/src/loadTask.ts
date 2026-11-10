@@ -60,7 +60,9 @@ export function selectLevelScript(
   taskId: string,
   options: LoadTaskOptions = {},
 ): unknown {
-  const count = 1 + (source.variants?.length ?? 0);
+  // 运行期输入不可信：坏 variants（不是数组）当作没有变体，别让 [].length 之外的形状抛异常
+  const variants = Array.isArray(source.variants) ? source.variants : [];
+  const count = 1 + variants.length;
   const explicit = options.variantIndex;
   let index = 0;
   if (count > 1 && explicit !== undefined && Number.isInteger(explicit)) {
@@ -72,7 +74,7 @@ export function selectLevelScript(
     for (let i = 0; i < key.length; i += 1) hash = (Math.imul(hash, 31) + key.charCodeAt(i)) | 0;
     index = Math.abs(hash) % count;
   }
-  return index === 0 ? source.levelScript : (source.variants?.[index - 1] ?? source.levelScript);
+  return index === 0 ? source.levelScript : (variants[index - 1] ?? source.levelScript);
 }
 
 export async function loadTask(
@@ -82,6 +84,8 @@ export async function loadTask(
 ): Promise<TaskDetail | null> {
   const summary = getTaskSummary(id, locale);
   if (!summary) return null;
+  // 中文详情是关卡本体：加载失败必须继续抛错，让外壳进「没打开，再试一次」的重试态
+  // （返回 null 会被外壳当成「找不到这个玩法」，反而没有重试入口）。
   const extra = await ZH_LOADERS[id]();
   let detail: TaskDetail;
   if (locale === 'en') {

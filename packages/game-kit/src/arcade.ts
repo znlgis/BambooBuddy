@@ -6,11 +6,21 @@ export const ARCADE_LEVEL_EVERY_PLAYS = 2;
 /** 难度封顶：到顶后不再变难，但无限畅玩仍然可以一直玩 */
 export const ARCADE_LEVEL_MAX = 12;
 
-/** 由某款游戏累计完成的局数算难度等级（1..ARCADE_LEVEL_MAX）；存档、界面与游戏共用这一份 */
+/**
+ * 由某款游戏累计完成的局数算难度等级（1..ARCADE_LEVEL_MAX）；存档、界面与游戏共用这一份。
+ *
+ * 坏输入口径：NaN / undefined / 负数 / 小数都先归一成非负整数（1 级），
+ * +Infinity 视为"玩了非常多局"封顶到最高级。**不能**只用 Number.isNaN 判坏值：
+ * undefined / 字符串经 Math.floor 也会变成 NaN，一旦漏过去，界面就会显示 "Lv.NaN"。
+ */
 export function arcadeLevelFor(plays: number): number {
-  // NaN / 负数当 0（1 级）；+Infinity 自然封顶到最高级
-  const safePlays = Number.isNaN(plays) ? 0 : Math.max(0, Math.floor(plays));
-  return Math.min(ARCADE_LEVEL_MAX, 1 + Math.floor(safePlays / ARCADE_LEVEL_EVERY_PLAYS));
+  const normalized =
+    plays === Number.POSITIVE_INFINITY
+      ? Number.MAX_SAFE_INTEGER
+      : Number.isFinite(plays)
+        ? Math.max(0, Math.floor(plays))
+        : 0;
+  return Math.min(ARCADE_LEVEL_MAX, 1 + Math.floor(normalized / ARCADE_LEVEL_EVERY_PLAYS));
 }
 
 /**

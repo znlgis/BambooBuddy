@@ -47,7 +47,7 @@ export const enUS: Record<MessageKey, string> = {
   'home.fragments': 'Fragments {n}',
   'home.intimacy': 'Closeness {n}',
   'home.nextStage': '{n} more growth points and Bamboo will grow a little',
-  'home.maxStage': 'Bamboo has grown up — the room and travel diary are unlocked',
+  'home.maxStage': 'Bamboo has grown up — everything in the room can be decorated bit by bit',
   'home.hint': "Bamboo's wish",
   'home.diary': "See Bamboo's day",
 

@@ -109,4 +109,33 @@ describe('界面文案表', () => {
     expect(tr('dress.title')).toBe('竹竹的装扮');
     expect(tr('parent.title')).toBe('家长中心');
   });
+
+  it('中英同一键的占位符集合一致（翻译时不能漏掉 {n} / {total} / {done}）', () => {
+    const placeholders = (text: string): string[] =>
+      [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
+    const zh = mergedZh();
+    const en = messages.en!;
+    for (const key of Object.keys(zh)) {
+      expect(placeholders(en[key] ?? ''), key + ' = ' + en[key]).toEqual(placeholders(zh[key]!));
+    }
+  });
+
+  it('fillTemplate 只替换已知占位符，未知 / 缺失 / 重复 / 多个都能处理', () => {
+    // 多个占位符各替换各的，顺序不影响结果
+    expect(fillTemplate('{a} + {b}', { a: 1, b: 2 })).toBe('1 + 2');
+    // 同一个占位符出现两次，两处都要替换
+    expect(fillTemplate('{n} / {n}', { n: 3 })).toBe('3 / 3');
+    // 未知占位符保留原文（宁可露出 {x}，也不要渲染出 undefined）
+    expect(fillTemplate('{n} + {x}', { n: 3 })).toBe('3 + {x}');
+    // 没有占位符时原样返回
+    expect(fillTemplate('没有占位符', {})).toBe('没有占位符');
+    // 占位符名字里的连字符目前不用；出现了也应原样保留而不是变成半截文本
+    expect(fillTemplate('{day-of-week}', {})).toBe('{day-of-week}');
+    // 字符串与 0 都是合法值（0 不能被当成"没传"）
+    expect(fillTemplate('{n}', { n: 0 })).toBe('0');
+    expect(fillTemplate('{name}', { name: 'Bamboo' })).toBe('Bamboo');
+    // 花括号不成对时不做替换，也不吞字
+    expect(fillTemplate('{n', { n: 3 })).toBe('{n');
+    expect(fillTemplate('n}', { n: 3 })).toBe('n}');
+  });
 });

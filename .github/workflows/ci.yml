@@ -44,6 +44,8 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+          # 报告目录是否存在取决于 reporter 与失败阶段，缺了不该再刷一条 warning
+          if-no-files-found: ignore
 
   preview:
     runs-on: ubuntu-latest
@@ -61,3 +63,12 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       # 生产产物的懒加载与体积：build 后跑 preview 配置
       - run: pnpm e2e:dist
+      # 产物用例失败也要有证据（html 报告 + trace/截图），否则这类失败只能靠猜
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-preview
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

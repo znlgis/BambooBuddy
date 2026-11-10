@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { SAVE_SCHEMA_VERSION } from '../packages/game-kit/src/contract';
 import { ARCADE_DAILY_PLAYS } from '../packages/progress/src/arcade';
-import { waitEvent } from './shared';
+import { events, waitEvent } from './shared';
 
 /**
  * 隐藏小游戏（竹林小门）的主链路：
@@ -295,9 +295,16 @@ test('无限畅玩：一局结束后自动接着下一局、不返回游戏厅�
   }
 
   await playUntil(1);
-  // 一局结束后不返回游戏厅，约 0.9 秒后自动续上下一局
-  await expect(page.getByTestId('arcade-play-view')).toBeVisible();
-  await page.waitForTimeout(1800);
+  // 一局结束后不返回游戏厅，约 0.9 秒后自动续上下一局。
+  // 等的是"第二局真的起来了"（arcade:start 事件第二次出现），不是固定 sleep 1.8 秒：
+  // 慢机上固定等待会把"还没续上"当成通过，快机上又白等。
+  await expect
+    .poll(
+      async () =>
+        (await events(page)).filter((event) => event === 'arcade:start:popstar').length,
+      { timeout: 20_000, message: '一局结束后没有自动接上第二局' },
+    )
+    .toBeGreaterThanOrEqual(2);
   await expect(page.getByTestId('arcade-play-view')).toBeVisible();
   await expect(page.getByTestId('arcade-view')).toHaveCount(0);
 

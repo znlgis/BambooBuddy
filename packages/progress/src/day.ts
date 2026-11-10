@@ -4,9 +4,14 @@ function pad(value: number): string {
   return value < 10 ? '0' + value : String(value);
 }
 
-/** 本地日期的 YYYY-MM-DD（孩子用的是墙钟上的"今天"，不是 UTC 的今天） */
+/**
+ * 本地日期的 YYYY-MM-DD（孩子用的是墙钟上的"今天"，不是 UTC 的今天）。
+ *
+ * 非有限时间戳（NaN / Infinity，来自坏注入时钟）按 1970-01-01 处理：
+ * 若不兜底会得到 "NaN-NaN-NaN" 并当成日期键写进存档、参与字典序裁剪，坏得无声无息。
+ */
 export function dayKey(now: number): string {
-  const date = new Date(now);
+  const date = new Date(Number.isFinite(now) ? now : 0);
   return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
 }
 
@@ -39,6 +44,11 @@ function dayKeyToUtc(key: string): number | null {
   return utc;
 }
 
+/** 日期键是否合法：格式 YYYY-MM-DD 且这个日历日真实存在（2026-02-31 / 2026-99-99 都算坏键） */
+export function isDayKey(value: unknown): value is string {
+  return typeof value === 'string' && dayKeyToUtc(value) !== null;
+}
+
 /** to − from 的整天数；任一日期非法返回 0（坏存档按"没有跨天"处理） */
 export function daysBetween(from: string, to: string): number {
   const a = dayKeyToUtc(from);
@@ -49,7 +59,8 @@ export function daysBetween(from: string, to: string): number {
 
 export function addDays(key: string, delta: number): string {
   const base = dayKeyToUtc(key);
-  if (base === null) return key;
+  // 坏 delta（NaN / Infinity）同样原样返回坏键：否则会造出 "NaN-NaN-NaN" 这种假日期键
+  if (base === null || !Number.isFinite(delta)) return key;
   const date = new Date(base + delta * 86_400_000);
   return date.getUTCFullYear() + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate());
 }

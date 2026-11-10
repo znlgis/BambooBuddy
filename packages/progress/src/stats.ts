@@ -44,7 +44,8 @@ export function applyStatDelta(
 
 /** 跨了几天就衰减几次（一次最多 7 天：久没来也只轻轻掉一点） */
 export function decayStats(stats: Stats, days: number): Stats {
-  const times = Math.max(0, Math.min(7, Math.floor(days)));
+  // 坏天数（NaN / Infinity）当 0：Math.floor(NaN) 仍是 NaN，一路传进 clampStat 会把所有状态打到下限 10
+  const times = Number.isFinite(days) ? Math.max(0, Math.min(7, Math.floor(days))) : 0;
   if (times === 0) return stats;
   const out = { ...stats };
   for (const key of STAT_KEYS) {

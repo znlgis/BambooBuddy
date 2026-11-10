@@ -167,6 +167,12 @@ export class ProgressManager {
   private loaded = false;
   /** 读档落定之前是否发生过写入：有写入时绝不拿读出来的旧快照覆盖内存 */
   private writtenBeforeLoad = false;
+  /**
+   * 落盘队列：两次操作几乎同时点下时（如"清档"紧接着"摸头"），
+   * 不能让两次 IndexedDB 写入乱序完成 —— 否则先发的那次后落地，磁盘回退到旧快照。
+   * 队列只负责顺序，错误照样抛给各自的调用方。
+   */
+  private saveChain: Promise<void> = Promise.resolve();
 
   constructor(store: ProgressStore, clock: () => number, now = clock()) {
     this.store = store;
@@ -175,7 +181,13 @@ export class ProgressManager {
   }
 
   init(): Promise<SaveData> {
-    this.loading ??= this.load();
+    this.loading ??= this.load().catch((cause: unknown) => {
+      // 读档失败不缓存成"本次会话永久只读"：IndexedDB 打不开多数是瞬时的
+      // （3 秒超时、别的标签页占着升级、隐私模式里被拒），下一次 init / 写操作
+      // 应该还能再试一次。当次调用照样把错误抛给调用方，绝不静默用空档顶上。
+      this.loading = null;
+      throw cause;
+    });
     return this.loading;
   }
 
@@ -221,7 +233,8 @@ export class ProgressManager {
     // 只有状态真的变过才写盘：打开一次就写一次只会白耗 IndexedDB 寿命
     if (gap > 0 || missingDay) {
       try {
-        await this.store.save(next);
+        // 也走落盘队列：读档补写与"清档"同时发生时，两笔写入不能乱序
+        await this.enqueueSave(next);
       } catch {
         // 读档已经成功，写失败留给后续操作的 unsaved 提示
       }
@@ -638,7 +651,8 @@ export class ProgressManager {
     this.writtenBeforeLoad = true;
     this.loaded = true;
     this.loading = Promise.resolve(next);
-    await this.store.save(next);
+    // 走落盘队列：清档前还在途的存档写完再清，磁盘最终一定是空档（旧进度不会被写回来）
+    await this.enqueueSave(next);
     return next;
   }
 
@@ -656,6 +670,17 @@ export class ProgressManager {
   private async commit(next: SaveData): Promise<void> {
     this.data = next;
     if (!this.loaded) this.writtenBeforeLoad = true;
-    await this.store.save(next);
+    await this.enqueueSave(next);
+  }
+
+  /**
+   * 把一次落盘排进队列：磁盘上的写入顺序 = 内存里的提交顺序，最后落地的一定是最新快照。
+   * 队列自身吞掉错误（否则一次写盘失败会让后续所有写盘都跟着失败），
+   * 但每次都把这份错误原样抛给调用方，unsaved 提示与失败语义不受影响。
+   */
+  private enqueueSave(next: SaveData): Promise<void> {
+    const run = this.saveChain.then(() => this.store.save(next));
+    this.saveChain = run.catch(() => undefined);
+    return run;
   }
 }

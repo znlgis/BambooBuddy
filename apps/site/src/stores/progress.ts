@@ -97,9 +97,10 @@ export const useProgress = defineStore('progress', () => {
       try {
         save.value = await progressManager.init();
       } catch (cause) {
-        // 存档坏了不是致命错误：本次会话从空档开始，界面照样能用
+        // 读档失败先按空档用；但不缓存失败：manager 允许重试（超时/被占用多是瞬时的）
+        inflight = null;
         initError.value = cause instanceof Error ? cause.message : String(cause);
-        console.warn('[bamboo] 存档读取失败，本次从空档开始', cause);
+        console.warn('[bamboo] 读档失败，先按空档用', cause);
       } finally {
         ready.value = true;
         syncSave();

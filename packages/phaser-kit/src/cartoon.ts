@@ -219,15 +219,23 @@ export function drawHand(
   roundRect(g, x - 36 * s, y + 2 * s, 20 * s, 28 * s, 11 * s, skin, THEME.outline, 5 * s);
 }
 
+/**
+ * 卡通小手，表示"可以拖我 / 点这里"。
+ *
+ * animate=false 时只画手、不做无限摆动：prefers-reduced-motion 下无限补间也属于
+ * README 承诺要收掉的动态（提示性动画保留位置即可，不需要一直晃）。
+ */
 export function createHand(
   scene: Phaser.Scene,
   x: number,
   y: number,
   s = 1,
+  animate = true,
 ): Phaser.GameObjects.Graphics {
   const g = scene.add.graphics().setDepth(850);
   drawHand(g, 0, 0, s);
   g.setPosition(x, y);
+  if (!animate) return g;
   scene.tweens.add({
     targets: g,
     y: y + 16,

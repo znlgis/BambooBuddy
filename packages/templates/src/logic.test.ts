@@ -18,7 +18,7 @@ import {
 import { createDressState, dressComplete, dressLevelSchema, stepProgress as dressStepProgress, tryDress } from './dress.logic';
 import { createOrderState, currentStep, orderComplete, orderLevelSchema, stepProgress as orderStepProgress, tapStep } from './order.logic';
 import { createTidyState, stepProgress as tidyStepProgress, tidyComplete, tidyLevelSchema, tidyProgress, tryTidy } from './tidy.logic';
-import { STEP_DOTS, stepDotsLeft, stepProgressOf } from './layout';
+import { STEP_DOTS, stepDotsLeft, stepProgressOf, tidyBinPositions } from './layout';
 import {
   createRhythmState,
   cycleMs,
@@ -492,6 +492,36 @@ describe('步骤进度：order / dress / tidy 的数据侧', () => {
     expect(stepProgressOf(-3, 4)).toEqual({ index: 1, total: 4 });
     expect(stepProgressOf(99, 4)).toEqual({ index: 4, total: 4 });
     expect(stepProgressOf(2.7, 3.8)).toEqual({ index: 3, total: 3 });
+  });
+
+  it('整理箱：2–3 个箱子沿用固定坐标，4 个箱子一排放下且不越界', () => {
+    // 2–3 箱：e2e 的真实拖拽按这套坐标算落点，一个像素都不能动
+    expect(tidyBinPositions(['ball', 'block', 'book'])).toEqual([
+      { x: 150, y: 1170 },
+      { x: 375, y: 1170 },
+      { x: 600, y: 1170 },
+    ]);
+    // 内容里 kind 的顺序不一定按布局顺序，按 kind 取坐标
+    expect(tidyBinPositions(['book', 'ball'])).toEqual([
+      { x: 600, y: 1170 },
+      { x: 150, y: 1170 },
+    ]);
+
+    // 4 箱（第二套关卡多了「小车」）：统一 166 宽 + 22 间距，全部落在 750 内
+    const four = tidyBinPositions(['ball', 'block', 'book', 'car']);
+    expect(four).toHaveLength(4);
+    for (const point of four) {
+      expect(point.x - 83).toBeGreaterThanOrEqual(0);
+      expect(point.x + 83).toBeLessThanOrEqual(750);
+      expect(point.y).toBe(1170);
+    }
+    for (let i = 1; i < four.length; i += 1) {
+      expect(four[i]!.x - four[i - 1]!.x).toBeCloseTo(188, 6);
+    }
+
+    // 空数组 / 未知类别都兜底，不会给场景一个 undefined 坐标
+    expect(tidyBinPositions([])).toEqual([]);
+    expect(tidyBinPositions(['nope'])).toEqual([{ x: 150, y: 1170 }]);
   });
 
   it('进度点常量：圆点不重叠、居中算法正确', () => {

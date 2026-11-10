@@ -83,6 +83,12 @@ if (tauri) {
     else fail("CSP 缺少 script-src 'self'");
     if (csp.includes("connect-src 'none'")) ok("CSP 含 connect-src 'none'（应用不联网）");
     else fail("CSP 缺少 connect-src 'none'（本项目不联网，不应放开网络出口）");
+    // default-src 'self' 已经覆盖这两条，显式写出来是为了"改 CSP 的人一眼看到底线"：
+    // object/embed 与 <base> 游戏一样都不用，留着只会扩大注入面。
+    if (csp.includes("object-src 'none'")) ok("CSP 含 object-src 'none'");
+    else fail("CSP 缺少 object-src 'none'（默认虽有 default-src 兜底，显式写出来防误改）");
+    if (csp.includes("base-uri 'none'")) ok("CSP 含 base-uri 'none'");
+    else fail("CSP 缺少 base-uri 'none'（防止 <base> 改写相对路径）");
   } else {
     fail('tauri.conf.json 的 app.security.csp 不能为 null 或空（P2-4）');
   }
@@ -178,10 +184,14 @@ if (release !== null) {
 
 console.log('\n[本地脚本]');
 const pkg = readJson('package.json');
-const scripts = pkg?.scripts ?? {};
-for (const name of ['icons', 'keystore', 'dist:win', 'dist:apk']) {
-  if (scripts[name]) ok('pnpm ' + name + ' = ' + scripts[name]);
-  else fail('package.json 缺少脚本 ' + name);
+// readJson 读不到时已经记过一次失败：这里跳过脚本断言，避免同一个缺失被计成 5 个错误
+// （"缺 package.json" 一条 + 四个脚本各一条，错误数虚高会让真正的问题淹没在噪音里）
+if (pkg !== null) {
+  const scripts = pkg.scripts ?? {};
+  for (const name of ['icons', 'keystore', 'dist:win', 'dist:apk']) {
+    if (scripts[name]) ok('pnpm ' + name + ' = ' + scripts[name]);
+    else fail('package.json 缺少脚本 ' + name);
+  }
 }
 
 if (errors > 0) {

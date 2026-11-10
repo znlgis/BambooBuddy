@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { TASK_IDS } from '../packages/content/src/ids';
 import { gotoPlay } from './shared';
@@ -17,7 +18,9 @@ import { gotoPlay } from './shared';
  * 主配置（pnpm e2e）也会收集到它 —— 那种情况下直接 skip，否则会拿 dev server 的
  * 请求去断言 /assets/ 产物，得到一堆毫无意义的红。
  */
-const DIST = join(process.cwd(), 'apps/site/dist');
+// 仓库根由本文件位置推导，不依赖 cwd：从 apps/site 目录里跑 playwright 也不会指向错误的 dist
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const DIST = join(ROOT, 'apps/site/dist');
 const ASSETS = join(DIST, 'assets');
 const PREVIEW_PORT = '5191';
 

@@ -101,10 +101,19 @@ function firstScreenRefs(markup) {
 
 const referenced = firstScreenRefs(html);
 
-/** 内联 <script>/<style> 的文本：同样要用户先下载，必须计入首屏 */
-const inlineBytes = [...html.matchAll(/<(script|style)[^>]*>([\s\S]*?)<\/\1>/g)]
-  .filter((match) => match[2].trim().length > 0)
-  .reduce((sum, match) => sum + Buffer.byteLength(match[2], 'utf8'), 0);
+/**
+ * 内联 <script>/<style> 的文本：同样要用户先下载，必须计入首屏。
+ *
+ * gzip 与原始两条口径都要算：以前只把内联计入原始字节，gzip 预算里一个字都没算，
+ * 于是"把入口改成内联 bootstrap"就能让 gzip 首屏看起来没变、真实下载量涨上去 ——
+ * 两条预算必须是同一份内容，否则 60 KB 这条线是能被绕过的。
+ */
+const inlineTexts = [...html.matchAll(/<(script|style)[^>]*>([\s\S]*?)<\/\1>/g)]
+  .map((match) => match[2])
+  .filter((text) => text.trim().length > 0);
+const inlineBytes = inlineTexts.reduce((sum, text) => sum + Buffer.byteLength(text, 'utf8'), 0);
+/** 内联部分按 html 里出现的顺序拼起来压一次：近似浏览器 gzip 整个 index.html 的收益 */
+const inlineGzipBytes = inlineTexts.length > 0 ? gzipSync(Buffer.from(inlineTexts.join('\n'), 'utf8')).length : 0;
 
 if (referenced.size === 0) {
   console.error('  ✗ index.html 里没有任何 js/css 引用 —— 产物结构可能变了，先人工确认再改这个脚本');
@@ -139,9 +148,13 @@ if (entrySrc === null) {
 }
 
 console.log('\n首屏必须下载的：');
-let initialGzip = 0;
+let initialGzip = kb(inlineGzipBytes);
 let initialRaw = inlineBytes;
-if (inlineBytes > 0) console.log('  · index.html 内联脚本/样式  ' + kb(inlineBytes) + ' KB');
+if (inlineBytes > 0) {
+  console.log(
+    '  · index.html 内联脚本/样式  ' + kb(inlineGzipBytes) + ' KB (gzip) / ' + kb(inlineBytes) + ' KB（原始）',
+  );
+}
 for (const path of files) {
   if (!referenced.has(path.replace(/\\/g, '/'))) continue;
   const raw = statSync(path).size;

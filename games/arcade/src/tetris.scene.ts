@@ -198,7 +198,10 @@ class TetrisScene extends ArcadeScene {
     if (this.done) return;
     this.done = true;
     this.dragStart = null;
-    this.time.delayedCall(this.autoplay ? 240 : 620, () => this.finish(this.state.score));
+    // 落档优先：完成判定一成立就同步发 arcade:complete（外壳据此写成绩）。
+    // 原来这里要等消行闪光播完（240/620ms）才 finish，那段时间按返回/切后台就把这一局吃掉；
+    // 撒花结算卡本来就在 finish 内部延迟 420ms 才出现，视觉节奏不受影响。
+    this.finish(this.state.score);
   }
 
   /* ---------------- autoplay：AI 规划 → 同一组输入函数 ---------------- */

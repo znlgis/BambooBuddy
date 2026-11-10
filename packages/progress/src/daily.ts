@@ -68,7 +68,9 @@ export function recommendedTasks(
   count = DAILY_TASK_TARGET,
 ): TaskSummary[] {
   if (tasks.length === 0) return [];
-  const target = Math.min(Math.max(1, count), tasks.length);
+  // 坏 count（NaN / Infinity / 小数）兜底成默认件数：Math.max(1, NaN) 仍是 NaN，会让 take() 永不停止
+  const safeCount = Number.isFinite(count) ? Math.floor(count) : DAILY_TASK_TARGET;
+  const target = Math.min(Math.max(1, safeCount), tasks.length);
   const random = seededRandom(hashString(dateKey + '|' + slot));
   const picked: TaskSummary[] = [];
   const seen = new Set<string>();

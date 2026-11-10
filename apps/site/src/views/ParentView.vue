@@ -240,6 +240,7 @@ onBeforeUnmount(stopHold);
           type="button"
           data-testid="parent-sound"
           class="flex min-h-12 items-center gap-2 rounded-full bg-bamboo-deep px-6 py-3 text-base font-bold text-white active:scale-95"
+          :aria-pressed="!settings.muted"
           @click="settings.toggle()"
         >
           <span data-testid="parent-mute" aria-hidden="true">{{ settings.muted ? '🔇' : '🔊' }}</span>

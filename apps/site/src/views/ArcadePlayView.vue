@@ -5,6 +5,7 @@ import { arcadeRegistry } from '../arcade/registry';
 import { navigate } from '../router';
 import { createArcadeContext } from '../shell/createArcadeContext';
 import { recordDebugError, recordDebugEvent } from '../shell/debug';
+import { useModal } from '../shell/modal';
 import { platform } from '../shell/platform';
 import { startPlayClock } from '../shell/playClock';
 import { useI18n } from '../shell/useI18n';
@@ -30,6 +31,15 @@ let unlimitedMode = false;
 let continuing = false;
 
 let continueTimer: ReturnType<typeof setTimeout> | null = null;
+
+/* 两个全屏浮层：焦点移入、Esc 关闭、关闭后焦点还回去（见 shell/modal） */
+const leaveDialog = ref<HTMLElement | null>(null);
+const errorDialog = ref<HTMLElement | null>(null);
+useModal(leaveDialog, () => {
+  leaving.value = false;
+});
+/** 错误态没有"取消"可言：Esc 与"回游戏厅"按钮一致 */
+useModal(errorDialog, () => navigate('/arcade'));
 
 const progress = useProgress();
 const settings = useSettings();
@@ -150,7 +160,9 @@ async function start(): Promise<void> {
     }
     const load = arcadeRegistry[props.gameId];
     if (load === undefined) {
-      error.value = t('arcade.notFound') + props.gameId;
+      // 不把内部 id 拼进孩子读的文案：路由已经挡过未知 id，这里只留调试细节
+      recordDebugError('arcadeRegistry 缺少小游戏：' + props.gameId);
+      error.value = t('arcade.loadFailed');
       return;
     }
     const loaded = (await load()).default;
@@ -203,7 +215,12 @@ onBeforeUnmount(async () => {
   toastTimer = null;
   releaseLifecycle();
   platform.audio.stopSpeech();
-  await mod.value?.unmount();
+  try {
+    await mod.value?.unmount();
+  } catch (cause) {
+    // 卸载失败不该让路由切换变成未处理拒绝；技术细节留给调试桥
+    recordDebugError(cause instanceof Error ? cause.message : String(cause));
+  }
   mod.value = null;
 });
 </script>
@@ -238,6 +255,8 @@ onBeforeUnmount(async () => {
     <div
       v-if="loading && error === null"
       data-testid="arcade-loading"
+      role="status"
+      aria-live="polite"
       class="absolute inset-0 z-20 flex items-center justify-center bg-paper/95"
     >
       <p class="text-lg font-bold text-bamboo-deep">{{ t('arcade.loading') }}</p>
@@ -245,7 +264,11 @@ onBeforeUnmount(async () => {
 
     <div
       v-if="leaving"
+      ref="leaveDialog"
       data-testid="arcade-leave-confirm"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('arcade.leaveConfirm')"
       class="absolute inset-0 z-30 flex items-center justify-center bg-ink/80 px-6"
     >
       <div class="w-full max-w-sm rounded-3xl bg-card p-6 text-center">
@@ -273,9 +296,13 @@ onBeforeUnmount(async () => {
 
     <div
       v-if="error !== null"
+      ref="errorDialog"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="arcade-error-text"
       class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-paper px-6 text-center"
     >
-      <p class="text-base text-ink">{{ error }}</p>
+      <p id="arcade-error-text" class="text-base text-ink">{{ error }}</p>
       <div class="flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"

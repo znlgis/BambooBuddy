@@ -54,8 +54,3 @@ export function careAvailable(
 ): boolean {
   return careDays[action] !== today;
 }
-
-export function unlockedGestures(points: number): string[] {
-  const safe = Math.max(0, points);
-  return INTIMACY_STEPS.filter((step) => safe >= step.at).map((step) => step.gesture);
-}

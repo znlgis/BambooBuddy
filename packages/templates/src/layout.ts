@@ -50,14 +50,48 @@ export const SCRUB_LAYOUT = {
 export const TIDY_LAYOUT = {
   /** 玩具散落区：内容 JSON 的 items 0–1 坐标映射到这里 */
   stage: { x: 60, y: 490, w: 630, h: 430 } satisfies Rect,
-  /** 箱子中心（按类别固定位置；场景按关卡里出现的箱子渲染） */
+  /**
+   * 三个箱子的固定中心（e2e 与真实拖拽都按这里算落点）。
+   * 第二套关卡有 4 个箱子时不走这里，见 tidyBinPositions：4 箱一排摆不下。
+   */
   bins: {
     ball: { x: 150, y: 1170 },
     block: { x: 375, y: 1170 },
     book: { x: 600, y: 1170 },
+    /**
+     * 仅为类型完整性保留：e2e 用 level.items 的 kind 索引本表，缺键会 typecheck 失败。
+     * 4 箱关卡实际不按这个坐标画（原来的 car 箱右缘 760 > 750 会被裁掉），
+     * 而是走 tidyBinPositions(4) 的紧凑排；2–3 箱关卡不会出现 car。
+     */
     car: { x: 690, y: 1230 },
   } satisfies Record<string, Point>,
 } as const;
+
+/**
+ * 箱子中心。
+ *
+ * 2–3 个箱子沿用上面的固定坐标（e2e 与真实操作都按这份坐标算落点，不能动）。
+ * 4 个箱子（第二套关卡多了「小车」）一排摆不下三只 190 宽的大箱子 —— 原来的
+ * car 箱被挤到 (690, 1230)，右缘 760 超出 750 设计宽被裁掉一截，还会压住书的箱子。
+ * 所以 4 箱时改成一排等距、统一 166 宽的紧凑布局，全部落在画面内且互不重叠。
+ */
+export function tidyBinPositions(kinds: readonly string[]): Point[] {
+  const safe = kinds.filter((kind) => typeof kind === 'string' && kind.length > 0);
+  if (safe.length <= 3) {
+    return safe.map((kind) => {
+      const point = (TIDY_LAYOUT.bins as Record<string, Point>)[kind];
+      return point ?? TIDY_LAYOUT.bins.ball;
+    });
+  }
+  const width = 166;
+  const gap = 22;
+  const total = safe.length * width + (safe.length - 1) * gap;
+  const startX = (DESIGN.width - total) / 2;
+  return Array.from({ length: safe.length }, (_, index) => ({
+    x: startX + index * (width + gap) + width / 2,
+    y: TIDY_LAYOUT.bins.ball.y,
+  }));
+}
 
 export const ORDER_LAYOUT = {
   /** 四个睡前道具的中心（id 与内容 steps 的 id 对齐） */

@@ -176,7 +176,7 @@ function navClass(active: boolean): string {
         @pointerleave="cancelParentHold"
         @pointercancel="cancelParentHold"
         @keydown.enter.prevent="startParentHold"
-        @keydown.space.prevent="startParentHold"
+        @keyup="cancelParentHold"
       >
         <span class="block truncate text-lg font-bold text-bamboo-deep">{{ t('app.title') }}</span>
         <span class="block truncate text-base text-inksoft">{{ t('app.subtitle') }}</span>

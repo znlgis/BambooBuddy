@@ -134,11 +134,18 @@ onBeforeUnmount(() => {
       </span>
     </div>
 
-    <!-- tab -->
-    <div class="mt-3 grid grid-cols-2 gap-2">
+    <!-- tab：读屏要知道"这是两个标签页中的哪一个、当前选中哪个"（以前只有背景色区分） -->
+    <div
+      class="mt-3 grid grid-cols-2 gap-2"
+      role="tablist"
+      :aria-label="t('dress.title')"
+    >
       <button
         type="button"
         data-testid="dress-tab-clothes"
+        role="tab"
+        :aria-selected="tab === 'clothes'"
+        aria-controls="dress-panel"
         class="flex min-h-12 items-center justify-center gap-1 rounded-full px-4 py-2 text-base font-bold active:scale-95"
         :class="tab === 'clothes' ? 'bg-bamboo-deep text-white' : 'bg-card text-ink'"
         @click="tab = 'clothes'"
@@ -148,6 +155,9 @@ onBeforeUnmount(() => {
       <button
         type="button"
         data-testid="dress-tab-room"
+        role="tab"
+        :aria-selected="tab === 'room'"
+        aria-controls="dress-panel"
         class="flex min-h-12 items-center justify-center gap-1 rounded-full px-4 py-2 text-base font-bold active:scale-95"
         :class="tab === 'room' ? 'bg-bamboo-deep text-white' : 'bg-card text-ink'"
         @click="tab = 'room'"
@@ -157,41 +167,47 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 按部位分组的目录 -->
-    <div v-for="group in groups" :key="group.slot" class="mt-4">
-      <h2 class="border-b-2 border-dashed border-cream pb-1 text-base font-bold text-bamboo-deep">
-        {{ group.title }}
-      </h2>
-      <ul class="mt-2 grid grid-cols-2 gap-2">
-        <li
-          v-for="item in group.items"
-          :key="item.id"
-          :data-testid="'dress-item-' + item.id"
-          class="flex flex-col rounded-2xl border-2 p-3"
-          :class="isActive(item) ? 'border-bamboo bg-mint' : 'border-cream bg-card'"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-2xl" aria-hidden="true">{{ item.emoji }}</span>
-            <span class="min-w-0 flex-1 text-base font-bold leading-tight text-ink">{{ itemName(item) }}</span>
-          </div>
-          <p class="mt-1 flex flex-wrap gap-x-2 text-base text-inksoft">
-            <span v-if="item.costShoots > 0">🎋 {{ t('dress.costShoots', { n: item.costShoots }) }}</span>
-            <span v-if="item.costFragments > 0">🧩 {{ t('dress.costFragments', { n: item.costFragments }) }}</span>
-            <span v-if="!progress.owns(item.id) && item.unlockLevel > 1" class="text-gold">
-              🔒 {{ t('dress.needLevel', { n: item.unlockLevel }) }}
-            </span>
-          </p>
-          <button
-            type="button"
-            :data-testid="'dress-action-' + item.id"
-            class="mt-2 min-h-12 w-full rounded-full px-3 py-2 text-base font-bold active:scale-95 disabled:opacity-60"
-            :class="actionClass(item)"
-            :disabled="isSettled(item) || pendingIds.has(item.id)"
-            @click="act(item)"
+    <div
+      id="dress-panel"
+      role="tabpanel"
+      :aria-label="tab === 'clothes' ? t('dress.clothes') : t('dress.room')"
+    >
+      <div v-for="group in groups" :key="group.slot" class="mt-4">
+        <h2 class="border-b-2 border-dashed border-cream pb-1 text-base font-bold text-bamboo-deep">
+          {{ group.title }}
+        </h2>
+        <ul class="mt-2 grid grid-cols-2 gap-2">
+          <li
+            v-for="item in group.items"
+            :key="item.id"
+            :data-testid="'dress-item-' + item.id"
+            class="flex flex-col rounded-2xl border-2 p-3"
+            :class="isActive(item) ? 'border-bamboo bg-mint' : 'border-cream bg-card'"
           >
-            {{ actionLabel(item) }}
-          </button>
-        </li>
-      </ul>
+            <div class="flex items-center gap-2">
+              <span class="text-2xl" aria-hidden="true">{{ item.emoji }}</span>
+              <span class="min-w-0 flex-1 text-base font-bold leading-tight text-ink">{{ itemName(item) }}</span>
+            </div>
+            <p class="mt-1 flex flex-wrap gap-x-2 text-base text-inksoft">
+              <span v-if="item.costShoots > 0">🎋 {{ t('dress.costShoots', { n: item.costShoots }) }}</span>
+              <span v-if="item.costFragments > 0">🧩 {{ t('dress.costFragments', { n: item.costFragments }) }}</span>
+              <span v-if="!progress.owns(item.id) && item.unlockLevel > 1" class="text-gold">
+                🔒 {{ t('dress.needLevel', { n: item.unlockLevel }) }}
+              </span>
+            </p>
+            <button
+              type="button"
+              :data-testid="'dress-action-' + item.id"
+              class="mt-2 min-h-12 w-full rounded-full px-3 py-2 text-base font-bold active:scale-95 disabled:opacity-60"
+              :class="actionClass(item)"
+              :disabled="isSettled(item) || pendingIds.has(item.id)"
+              @click="act(item)"
+            >
+              {{ actionLabel(item) }}
+            </button>
+          </li>
+        </ul>
+      </div>
     </div>
 
     <p

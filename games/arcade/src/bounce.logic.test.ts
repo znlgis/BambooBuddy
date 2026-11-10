@@ -119,6 +119,32 @@ describe('弹一弹：定步长与墙壁反弹', () => {
     const state = advanceBounce(start, BOUNCE_STEP_MS).state;
     expect(state.balls).toHaveLength(0);
   });
+
+  it('大 dt 与逐帧推进等价：位置/方块/装弹进度/累加器都一致', () => {
+    // 真机卡顿或切后台回来时 onFrame 可能一次给 200ms；accumMs 必须把不足一步的余量
+    // 留到下一帧，不能丢也不能多走 —— 这里用一个已经发射的球做对照：
+    // 一次 200ms = 25 次 8ms（装弹 900ms 同步扣减）。
+    const base = fireBall(createBounceGame(21), DEFAULT_AIM).state;
+    expect(base.reloadLeftMs).toBe(BOUNCE_BOARD.reloadMs);
+
+    let small = base;
+    for (let index = 0; index < 200 / BOUNCE_STEP_MS; index += 1) {
+      small = advanceBounce(small, BOUNCE_STEP_MS).state;
+    }
+    const big = advanceBounce(base, 200).state;
+
+    expect(big.balls).toEqual(small.balls);
+    expect(big.blocks).toEqual(small.blocks);
+    expect(big.accumMs).toBe(small.accumMs);
+    expect(big.reloadLeftMs).toBe(small.reloadLeftMs);
+    expect(big.reloadLeftMs).toBe(BOUNCE_BOARD.reloadMs - 200);
+    expect(big.accumMs).toBe(0);
+
+    // 非整数倍：余量留在 accumMs 里，下一次接着走
+    const residual = advanceBounce(base, BOUNCE_STEP_MS + 3).state;
+    expect(residual.accumMs).toBe(3);
+    expect(residual.balls[0]!.y).toBeCloseTo(base.balls[0]!.y - 12, 6);
+  });
 });
 
 describe('弹一弹：击碎方块与星星', () => {

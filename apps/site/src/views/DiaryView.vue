@@ -28,7 +28,8 @@ const todayArcadeNames = computed(() =>
     .map((id) => arcadeInfo(id))
     .filter((game): game is NonNullable<typeof game> => game !== undefined)
     .map((game) => t(game.nameKey))
-    .join('、'),
+    // 顿号只在中文里成立：英文界面读成 "pop, bounce" 才自然
+    .join(locale.current === 'en' ? ', ' : '、'),
 );
 
 const todayLines = computed(() =>

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { ArcadeContext, SfxKey } from '@bamboo/game-kit';
+import { resolveRoundMode } from './roundMode';
 import { ARCADE_LEVEL_MAX } from '@bamboo/game-kit';
 import { createTranslator } from '@bamboo/i18n';
 import type { MessageKey, MessageParams, Translator } from '@bamboo/i18n';
@@ -229,7 +230,8 @@ export abstract class ArcadeScene extends Phaser.Scene {
     if (this.finished) return;
     this.finished = true;
     const safeScore = Math.max(0, Math.floor(score));
-    const continuous = this.ctx.unlimited && !this.autoplay;
+    // 单测锁住"autoplay 永远 once"：自动通关不能被无限畅玩接走，否则 e2e/调试回不到游戏厅
+    const continuous = resolveRoundMode(this.ctx.unlimited, this.autoplay) === 'continuous';
     this.ctx.emit('arcade:complete', {
       gameId: this.ctx.manifest.id,
       score: safeScore,

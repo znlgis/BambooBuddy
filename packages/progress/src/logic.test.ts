@@ -18,9 +18,9 @@ import {
   feedBird,
   fragmentsFor,
   harvestMultiplier,
+  isDayKey,
   isFutureVersionSave,
   isHarvestDay,
-  levelForXp,
   MAX_STORED_MISTAKES,
   migrate,
   MILESTONES,
@@ -32,6 +32,7 @@ import {
   recommendedTasks,
   starsFor,
   statHints,
+  statsDeltaFor,
   todayRecord,
   weekSummary,
   yesterdayOf,
@@ -169,9 +170,11 @@ describe('成长阶段', () => {
     expect(growth.xpToNextStage(55)).toBe(5);
   });
 
-  it('等级稳步增长', () => {
-    expect(levelForXp(0)).toBe(1);
-    expect(levelForXp(40)).toBe(3);
+  it('距离下一阶段越来越近：成长值增加，剩余值单调递减', () => {
+    expect(growth.xpToNextStage(0)).toBe(60);
+    expect(growth.xpToNextStage(59)).toBe(1);
+    expect(growth.xpToNextStage(100)).toBe(60);
+    expect(growth.xpToNextStage(299)).toBe(1);
   });
 });
 
@@ -239,7 +242,8 @@ describe('亲密度', () => {
     expect(intimacy.intimacyLevel(0).name).toBe('初次见面');
     expect(intimacy.intimacyLevel(5).name).toBe('好朋友');
     expect(intimacy.intimacyLevel(35).level).toBe(5);
-    expect(intimacy.unlockedGestures(12)).toContain('转圈圈');
+    // 12 点这一档解锁的小动作（原先由 unlockedGestures 断言，函数已删：UI 只用 intimacyLevel）
+    expect(intimacy.intimacyLevel(12).gesture).toBe('转圈圈');
   });
 
   it('每个亲昵动作每天各一次', () => {
@@ -569,6 +573,34 @@ describe('读档失败与未来版本：宁可拒绝写入也不覆盖原档', (
     expect(writes).toBe(0);
   });
 
+  it('读档失败不是永久只读：下一次 init / 写操作会重试读档，成功后正常结算并落盘', async () => {
+    let attempts = 0;
+    const real = emptySave(T0);
+    real.pet.shoots = 9;
+    let disk: SaveData = real;
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        attempts += 1;
+        if (attempts === 1) throw new Error('transient IDB timeout');
+        return real;
+      },
+      async save(data: SaveData): Promise<void> {
+        disk = data;
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    // 第一次读档失败：调用方拿到错误、磁盘一个字都没写
+    await expect(pm.init()).rejects.toThrow('transient IDB timeout');
+    expect(attempts).toBe(1);
+    // 失败不能把管理器锁成"本次会话永久只读"：再试一次就能读到真实存档
+    const loaded = await pm.init();
+    expect(attempts).toBe(2);
+    expect(loaded.pet.shoots).toBe(9);
+    await pm.feed(T0);
+    expect(pm.snapshot().pet.shoots).toBe(8);
+    expect(disk.pet.shoots).toBe(8);
+  });
+
   it('未来版本存档：init 抛错、原档不被覆盖，clear() 仍可用作自救', async () => {
     const rawFuture = { schemaVersion: 99, pet: { xp: 123 }, tasks: {}, days: {} };
     let disk: unknown = rawFuture;
@@ -685,8 +717,7 @@ describe('运行时输入校验（类型断言不能代替校验）', () => {
     expect(pm.snapshot().days[TODAY]?.seconds).toBe(30);
   });
 
-  it('成长值/等级对 NaN 有兜底（不再显示 NaN）', () => {
-    expect(levelForXp(Number.NaN)).toBe(1);
+  it('成长值对 NaN 有兜底（不再显示 NaN）', () => {
     expect(growth.xpToNextStage(Number.NaN)).toBe(60);
     expect(growth.stageForXp(Number.NaN).id).toBe(1);
   });
@@ -1110,5 +1141,291 @@ describe('30 分钟收尾卡片：当天收下一次，跨天自动重置', () =
     await pm.refresh(T0 + DAY);
     expect(pm.snapshot().days[TODAY]?.restWrapDismissed).toBe(true); // 昨天的记录还在
     expect(pm.snapshot().days[tomorrow]?.restWrapDismissed).toBe(false);
+  });
+});
+
+/* ================================================================== *
+ * 故障路径：坏日期键 / 写盘失败 / 并发写盘（审查遗留的最后一块空白）
+ * ================================================================== */
+
+describe('坏日期键：非法日历日不能禁用衰减、不能污染日记录', () => {
+  it('lastDecayDay 是 2026-02-31 时换成读档当天，之后跨天衰减照常发生（不会被永久禁用）', async () => {
+    const raw = emptySave(T0);
+    raw.pet.lastDecayDay = '2026-02-31';
+    raw.pet.stats = { fullness: 90, energy: 90, clean: 90, mood: 90, health: 90 };
+    const store = memoryStore(raw);
+    const tomorrow = T0 + DAY;
+    const pm = new manager.ProgressManager(store, () => tomorrow, tomorrow);
+    await pm.init();
+    // 坏键不能留在存档里：读档当天按"今天"算起，不会凭空掉一截状态
+    expect(pm.snapshot().pet.lastDecayDay).toBe(addDays(TODAY, 1));
+    expect(pm.snapshot().pet.stats.fullness).toBe(90);
+    // 再过一天：衰减必须恢复。旧实现把 '2026-02-31' 原样留下，
+    // daysBetween(坏键, 今天) 恒为 0 → 状态衰减从此永久失效
+    await pm.refresh(tomorrow + DAY);
+    expect(pm.snapshot().pet.stats.fullness).toBe(80);
+    expect(pm.snapshot().pet.lastDecayDay).toBe(addDays(TODAY, 2));
+  });
+
+  it('careDays / lastCompletedDay / lastPlayedDay 的坏日历日被丢弃（动作不会被永久锁住）', () => {
+    const raw = {
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      pet: { careDays: { pat: '2026-02-31' } },
+      tasks: { brush: { lastCompletedDay: '2026-02-31' } },
+      arcade: { popstar: { lastPlayedDay: '2026-02-31' } },
+    };
+    const out = migrate(raw, T0);
+    expect(out.pet.careDays.pat).toBeUndefined();
+    expect(out.tasks.brush.lastCompletedDay).toBeNull();
+    expect(out.arcade.popstar.lastPlayedDay).toBeNull();
+  });
+
+  it('days 里的非法日历日整条丢弃，合法日期保留', () => {
+    const out = migrate(
+      {
+        schemaVersion: SAVE_SCHEMA_VERSION,
+        days: { [TODAY]: { seconds: 60 }, '2026-02-31': { seconds: 999 } },
+      },
+      T0,
+    );
+    expect(out.days[TODAY]?.seconds).toBe(60);
+    expect(out.days['2026-02-31']).toBeUndefined();
+  });
+
+  it('isDayKey 只认真实存在的日历日', () => {
+    expect(isDayKey(TODAY)).toBe(true);
+    expect(isDayKey('2026-02-28')).toBe(true);
+    expect(isDayKey('2024-02-29')).toBe(true);
+    expect(isDayKey('2026-02-29')).toBe(false);
+    expect(isDayKey('2026-02-31')).toBe(false);
+    expect(isDayKey('2026-13-01')).toBe(false);
+    expect(isDayKey('2026-00-10')).toBe(false);
+    expect(isDayKey('2026-10-19 ')).toBe(false);
+    expect(isDayKey(20_261_019)).toBe(false);
+    expect(isDayKey(null)).toBe(false);
+    expect(isDayKey(undefined)).toBe(false);
+  });
+
+  it('dayKey / addDays 对非有限时间戳不会造出 NaN-NaN-NaN', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(dayKey(bad)).not.toContain('NaN');
+      expect(isDayKey(dayKey(bad))).toBe(true);
+      expect(addDays(TODAY, bad)).toBe(TODAY);
+    }
+  });
+
+  it('未来日期键也要限额：坏档塞进 100 个未来日期时只留 30 天，今天仍在', () => {
+    const days: Record<string, DayRecord> = { [TODAY]: emptyDay(TODAY) };
+    for (let i = 1; i <= 100; i += 1) days[addDays(TODAY, i)] = emptyDay(addDays(TODAY, i));
+    const pruned = pruneDays(days, 30, TODAY);
+    expect(pruned[TODAY]).toBeDefined();
+    expect(Object.keys(pruned)).toHaveLength(31);
+  });
+});
+
+describe('写盘失败：内存已更新、磁盘最终补齐', () => {
+  it('save reject 时本次调用抛错，但这一局的反馈仍在内存；下一次成功写盘把改动一起落盘', async () => {
+    let fail = true;
+    const writes: SaveData[] = [];
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        return emptySave(T0);
+      },
+      async save(data: SaveData): Promise<void> {
+        if (fail) throw new Error('quota exceeded');
+        writes.push(data);
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    await expect(pm.care('pat', T0)).rejects.toThrow('quota exceeded');
+    // 写盘失败不能把孩子的动作回滚：界面照常给反馈，只是"可能没存上"
+    expect(pm.snapshot().pet.careDays.pat).toBe(TODAY);
+    expect(writes).toHaveLength(0);
+
+    fail = false;
+    await pm.care('hug', T0);
+    // 下一次成功写盘会把上一次没写进去的「摸头」一起带上
+    expect(writes.at(-1)?.pet.careDays.pat).toBe(TODAY);
+    expect(writes.at(-1)?.pet.careDays.hug).toBe(TODAY);
+  });
+
+  it('一次写盘失败不会卡住后续写盘（队列吞错但不丢顺序）', async () => {
+    let calls = 0;
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        return emptySave(T0);
+      },
+      async save(): Promise<void> {
+        calls += 1;
+        throw new Error('write failed #' + calls);
+      },
+    };
+    const pm = new manager.ProgressManager(store, () => T0, T0);
+    await pm.init();
+    await expect(pm.care('pat', T0)).rejects.toThrow('write failed #1');
+    await expect(pm.care('hug', T0)).rejects.toThrow('write failed #2');
+    expect(calls).toBe(2);
+  });
+});
+
+describe('并发写盘：队列保证磁盘最终是最新快照', () => {
+  /** 每个 save 都挂住，由测试手动按顺序放行；记录并发度 */
+  function deferredStore(initial: SaveData) {
+    const started: SaveData[] = [];
+    const resolvers: Array<() => void> = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const store: ProgressStore = {
+      async load(): Promise<SaveData> {
+        return initial;
+      },
+      save(data: SaveData): Promise<void> {
+        started.push(data);
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        return new Promise<void>((resolve) => {
+          resolvers.push(() => {
+            inFlight -= 1;
+            resolve();
+          });
+        });
+      },
+    };
+    return { store, started, resolvers, maxInFlight: () => maxInFlight };
+  }
+
+  async function flushMicrotasks(times = 10): Promise<void> {
+    for (let i = 0; i < times; i += 1) await Promise.resolve();
+  }
+
+  it('两次写盘串行：第一次没落地前第二次不发起，磁盘最后是最新快照', async () => {
+    const initial = emptySave(T0);
+    initial.pet.shoots = 50;
+    const deferred = deferredStore(initial);
+    const pm = new manager.ProgressManager(deferred.store, () => T0, T0);
+    await pm.init();
+
+    const first = pm.care('pat', T0);
+    await flushMicrotasks();
+    expect(deferred.started).toHaveLength(1);
+
+    const second = pm.care('hug', T0);
+    await flushMicrotasks();
+    // 串行：第一次还没落地，第二次不许开始（否则完成顺序可能反过来）
+    expect(deferred.started).toHaveLength(1);
+    expect(deferred.maxInFlight()).toBe(1);
+
+    deferred.resolvers[0]!();
+    await flushMicrotasks();
+    expect(deferred.started).toHaveLength(2);
+    deferred.resolvers[1]!();
+    await Promise.all([first, second]);
+
+    expect(deferred.maxInFlight()).toBe(1);
+    expect(deferred.started.at(-1)?.pet.careDays.pat).toBe(TODAY);
+    expect(deferred.started.at(-1)?.pet.careDays.hug).toBe(TODAY);
+    expect(deferred.started.at(-1)?.pet.shoots).toBe(50);
+  });
+
+  it('清档与在途写盘并发：空档最后落盘，旧进度不会被写回来', async () => {
+    const initial = emptySave(T0);
+    initial.pet.shoots = 50;
+    initial.pet.careDays = {};
+    const deferred = deferredStore(initial);
+    const pm = new manager.ProgressManager(deferred.store, () => T0, T0);
+    await pm.init();
+
+    const carePromise = pm.care('pat', T0);
+    await flushMicrotasks();
+    expect(deferred.started).toHaveLength(1);
+
+    const clearPromise = pm.clear(T0);
+    await flushMicrotasks();
+    // 清档排在在途写盘之后：不会有第二个并发写
+    expect(deferred.started).toHaveLength(1);
+
+    deferred.resolvers[0]!();
+    await flushMicrotasks();
+    expect(deferred.started).toHaveLength(2);
+    deferred.resolvers[1]!();
+    await Promise.all([carePromise, clearPromise]);
+
+    // 磁盘最终是空档：旧进度（50 根竹笋、摸头记录）不会被写回来
+    expect(deferred.started.at(-1)?.pet.shoots).toBe(3);
+    expect(deferred.started.at(-1)?.pet.careDays.pat).toBeUndefined();
+    expect(pm.snapshot().pet.shoots).toBe(3);
+  });
+});
+
+describe('纯函数坏输入兜底：NaN 不能变成惩罚或污染存档', () => {
+  it('decayStats：坏天数（NaN / Infinity / 负数）等于没跨天，不会把所有状态打到下限', () => {
+    const stats = { fullness: 90, energy: 90, clean: 90, mood: 90, health: 90 };
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -3]) {
+      expect(decayStats(stats, bad), String(bad)).toEqual(stats);
+    }
+    // 正常路径不变：1 天按表掉一次
+    expect(decayStats(stats, 1)).toEqual({
+      fullness: 80,
+      energy: 81,
+      clean: 80,
+      mood: 83,
+      health: 86,
+    });
+  });
+
+  it('starsFor：坏失误数也至少 1 颗星（永远没有 0 颗）', () => {
+    expect(starsFor(Number.NaN)).toBe(1);
+    // 负数按"几乎没有失误"处理：计数型输入出现负数只可能是坏数据，不能因此扣星星
+    expect(starsFor(-5)).toBe(3);
+    expect(starsFor(0)).toBe(3);
+    expect(starsFor(3)).toBe(2);
+    expect(starsFor(99)).toBe(1);
+  });
+
+  it('completionReward：奖励字段坏掉时退回最低 1 根 / 0 成长，不写 NaN', () => {
+    const broken = task({ reward: { shoots: Number.NaN, xp: Number.NaN } as TaskSummary['reward'] });
+    const first = completionReward(broken, true);
+    expect(first.shoots).toBe(1);
+    expect(Number.isFinite(first.xp)).toBe(true);
+    expect(first.xp).toBe(0);
+    const repeat = completionReward(broken, false);
+    expect(repeat.shoots).toBe(1);
+    expect(repeat.xp).toBe(3);
+    // 正常内容口径不变
+    expect(completionReward(task(), true, 1)).toEqual({ shoots: 2, xp: 10, fragments: 0 });
+  });
+
+  it('statsDeltaFor：坏状态收益不参与（不会把这一项打到下限 10）', () => {
+    const broken = task({ stats: { clean: Number.NaN, mood: 4 } as TaskSummary['stats'] });
+    expect(statsDeltaFor(broken, true)).toEqual({ mood: 4 });
+    expect(statsDeltaFor(task(), true)).toEqual({ clean: 14, mood: 4 });
+    expect(statsDeltaFor(task(), false)).toEqual({ clean: 7, mood: 2 });
+  });
+
+  it('nextStreak：坏连续数不会产出 NaN', () => {
+    expect(nextStreak(yesterdayOf(TODAY), TODAY, Number.NaN)).toBe(1);
+    expect(nextStreak(TODAY, TODAY, Number.NaN)).toBe(1);
+    expect(nextStreak(yesterdayOf(TODAY), TODAY, 3)).toBe(4);
+    expect(nextStreak(TODAY, TODAY, 3)).toBe(3);
+  });
+
+  it('recommendedTasks：坏 count 兜底成安全件数，不会把全部任务都塞进去', () => {
+    // NaN / Infinity 回落默认件数（4）；负数夹到最小 1 件
+    expect(recommendedTasks(TODAY, 'morning', TASKS, Number.NaN)).toHaveLength(
+      Math.min(4, TASKS.length),
+    );
+    expect(recommendedTasks(TODAY, 'morning', TASKS, Number.POSITIVE_INFINITY)).toHaveLength(
+      Math.min(4, TASKS.length),
+    );
+    expect(recommendedTasks(TODAY, 'morning', TASKS, -5)).toHaveLength(1);
+  });
+
+  it('pruneDays：坏 keep 兜底成 30 天上限，坏数据不会绕过裁剪', () => {
+    const days: Record<string, DayRecord> = {};
+    for (let i = 0; i < 40; i += 1) days[addDays(TODAY, -i)] = emptyDay(addDays(TODAY, -i));
+    const pruned = pruneDays(days, Number.NaN, TODAY);
+    expect(Object.keys(pruned)).toHaveLength(30);
+    expect(pruned[TODAY]).toBeDefined();
   });
 });

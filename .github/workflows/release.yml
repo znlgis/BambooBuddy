@@ -127,8 +127,12 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
+          # html 报告（reporter 在 CI 下产出）+ trace/截图，两样都要：
+          # 只传 test-results 时，失败原因得自己拼 trace，排查成本高得多
           name: release-playwright-results
-          path: test-results
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -253,6 +257,13 @@ jobs:
           cd apps/mobile/android
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           if [ -n "$KEYSTORE_BASE64" ]; then
+            # 四个 Secret 必须一起配：只配 KEYSTORE 却漏了密码/别名时，
+            # 会写出空密码的 keystore.properties，gradle 报一个和签名毫无关系的错。
+            # 注意用 if 而不是 "[ ... ] && ..."：默认 shell 带 -e，条件为假会直接失败。
+            if [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+              echo "::error::配置了 ANDROID_KEYSTORE_BASE64，但 ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD 有缺失 —— 四个 Secret 必须一起配。"
+              exit 1
+            fi
             echo "$KEYSTORE_BASE64" | base64 -d > bamboo-release.keystore
             {
               echo "storeFile=bamboo-release.keystore"

@@ -41,6 +41,9 @@ export function harvestMultiplier(day: string): 1 | 2 {
  * 几乎不失误 3 颗，偶尔重来 2 颗，重来很多次 1 颗 —— **没有 0 颗**。
  */
 export function starsFor(mistakes: number): Stars {
+  // 坏输入兜底：NaN / ±Infinity 按"重来很多次"给 1 颗（最低 1 颗，绝不出现 0 颗）；
+  // 负数只可能是坏数据，按"几乎没有失误"给 3 颗 —— 不因坏数据惩罚孩子。
+  if (!Number.isFinite(mistakes)) return 1;
   if (mistakes <= 1) return 3;
   if (mistakes <= 3) return 2;
   return 1;
@@ -62,11 +65,12 @@ export function completionReward(
   firstToday: boolean,
   multiplier: 1 | 2 = 1,
 ): CompletionReward {
-  const baseShoots = firstToday
-    ? task.reward.shoots
-    : Math.max(1, Math.floor(task.reward.shoots / 2));
-  const shoots = Math.max(1, baseShoots) * multiplier;
-  const xp = firstToday ? task.reward.xp : Math.max(3, Math.floor(task.reward.xp / 2));
+  // 奖励不可信输入兜底：NaN / 负数 / 小数一律夹成非负整数，绝不把 NaN 写进存档
+  const rewardShoots = nonNegativeInt(task.reward.shoots);
+  const rewardXp = nonNegativeInt(task.reward.xp);
+  const baseShoots = firstToday ? rewardShoots : Math.max(1, Math.floor(rewardShoots / 2));
+  const shoots = Math.max(1, baseShoots) * (multiplier === 2 ? 2 : 1);
+  const xp = firstToday ? rewardXp : Math.max(3, Math.floor(rewardXp / 2));
   return { shoots, xp, fragments: 0 };
 }
 
@@ -84,6 +88,8 @@ export function statsDeltaFor(
   const factor = firstToday ? 1 : 0.5;
   const out: Partial<Record<StatKey, number>> = {};
   for (const [key, value] of Object.entries(task.stats) as [StatKey, number][]) {
+    // 坏数值不参与：NaN 会经 clampStat 把这一项直接打到下限 10（等于一次惩罚）
+    if (!Number.isFinite(value)) continue;
     const scaled = Math.max(1, Math.ceil(value * factor));
     out[key] = scaled;
   }
@@ -99,8 +105,10 @@ export function nextStreak(
   today: string,
   previousStreak: number,
 ): number {
-  if (lastCompletedDay === today) return Math.max(1, previousStreak);
-  if (lastCompletedDay === yesterdayOf(today)) return Math.max(0, previousStreak) + 1;
+  // 坏连续数（NaN / 负数）按 0 算：否则 +1 之后仍是 NaN，UI 会显示"连续 NaN 天"
+  const previous = Number.isFinite(previousStreak) ? Math.max(0, Math.floor(previousStreak)) : 0;
+  if (lastCompletedDay === today) return Math.max(1, previous);
+  if (lastCompletedDay === yesterdayOf(today)) return previous + 1;
   return 1;
 }
 

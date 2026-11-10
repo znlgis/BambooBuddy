@@ -216,7 +216,7 @@ export function drawPanda(
     const ax = raised ? x + 118 * s : x + side * 96 * s;
     g.fillStyle(BLACK, 1);
     g.fillEllipse(ax, ay, 66 * s, 118 * s);
-    circle(g, ax, ay - (raised ? 42 : 42) * s, 27 * s, BLACK);
+    circle(g, ax, ay - 42 * s, 27 * s, BLACK);
   }
 
   // 围兜

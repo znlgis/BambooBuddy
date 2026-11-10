@@ -11,8 +11,9 @@ export type { TaskId };
 /**
  * Playwright 配置的共同基线（当前 dev / preview 两份；以后要加 shots、audit 也只 import 这里）。
  *
- * 注意：preview 配置**没有**展开 baseline —— 它只有 2 条用例、只需要 baseURL 与 trace，
- * 因此截图与 expect 超时不跟这边走。要加新的证据要求时，两处一起改。
+ * 注意：preview 配置只复用下面的 **evidenceReporters**（失败证据那一条必须两份一致），
+ * 其余（expect 超时、截图、testDir）由它自己决定 —— 它只跑 2 条产物用例，
+ * 不需要和玩法用例同一套期望。要改"失败时留什么证据"，两处都从 evidenceReporters 走，不会再各抄一份。
  *
  * 为什么是"共享基线"而不是每份配置各写一份：以前 CHAGS 的 shots/audit 各抄一份，
  * 结果 audit 没截图没轨迹、expect.timeout 漏了 —— 出事时最难查的那两份恰好没有证据。
@@ -36,6 +37,16 @@ export const devServer = {
   timeout: 120_000,
 } as const;
 
+/**
+ * 失败证据的 reporter 组合（两份配置共用，见上）。
+ *
+ * 本地只要 list（终端里读得清）；CI 额外产出 html 报告，失败时 upload-artifact 才有内容可传。
+ * 之前 CI 也在传 playwright-report/，但 reporter 只有 list —— 那个目录从来不存在，等于没证据。
+ */
+export const evidenceReporters = (process.env.CI
+  ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
+  : [['list']]) as PlaywrightTestConfig['reporter'];
+
 export const baseline = {
   testDir: './e2e',
   // 每条用例自己开 page/context；实测 2 个 worker 会放大长按/时序类断言的不稳定，
@@ -43,11 +54,7 @@ export const baseline = {
   fullyParallel: false,
   workers: 1,
   expect: { timeout: 20_000 },
-  // 本地只要 list（终端里读得清）；CI 额外产出 html 报告，失败时 upload-artifact 才有内容可传。
-  // 之前 CI 也在传 playwright-report/，但 reporter 只有 list —— 那个目录从来不存在，等于没证据。
-  reporter: (process.env.CI
-    ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]]
-    : [['list']]) as PlaywrightTestConfig['reporter'],
+  reporter: evidenceReporters,
   use: {
     baseURL: devBaseURL,
     trace: 'retain-on-failure',

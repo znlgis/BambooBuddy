@@ -33,26 +33,35 @@ export const TASKS: readonly TaskSummary[] = TASK_IDS.map((id) => {
 });
 
 let enSummaries: Record<TaskId, SummaryPatch> | null = null;
-let enLoading: Promise<void> | null = null;
+let enLoading: Promise<boolean> | null = null;
 
 const cache: Partial<Record<Locale, readonly TaskSummary[]>> = { 'zh-CN': TASKS };
 const maps: Partial<Record<Locale, Map<TaskId, TaskSummary>>> = {
   'zh-CN': new Map(TASKS.map((task) => [task.id, task])),
 };
 
-/** 切到英文前调用一次；已经加载过则立即 resolve。失败时保留中文，不让界面白屏。 */
-export function ensureSummaries(locale: Locale): Promise<void> {
-  if (locale !== 'en' || enSummaries !== null) return Promise.resolve();
+/**
+ * 切到英文前调用一次；已经加载过则立即 resolve(true)。
+ *
+ * 返回值是**英文摘要是否已就位**：加载失败返回 false 并保留中文（不让界面白屏），
+ * 与 @bamboo/i18n 的 ensureMessages 同一口径 —— 调用方据此决定要不要真把语言切到 en，
+ * 而不是把"失败"当"成功"（否则 localStorage / <html lang> 都成了英文，界面却还是中文）。
+ * 失败后 enLoading 归零，下次切语言还能重试一次。
+ */
+export function ensureSummaries(locale: Locale): Promise<boolean> {
+  if (locale !== 'en' || enSummaries !== null) return Promise.resolve(true);
   enLoading ??= import('./i18n/en/summaries')
     .then((module) => {
       enSummaries = module.EN_SUMMARY_PATCHES;
       const localized = TASKS.map((task) => localizeSummary(task, enSummaries?.[task.id]));
       cache.en = localized;
       maps.en = new Map(localized.map((task) => [task.id, task]));
+      return true;
     })
     .catch(() => {
-      // 英文补丁加载失败（离线/资源被清）时回落到中文，比空白页好
+      // 英文补丁加载失败（离线/资源被清）时回落到中文，比空白页好；下次调用会重试
       enLoading = null;
+      return false;
     });
   return enLoading;
 }

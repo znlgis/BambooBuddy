@@ -27,7 +27,11 @@ export const BOUNCE_BOARD = {
   maxBalls: 3,
   maxBounces: 8,
   reloadMs: 900,
-  /** 球速：8ms 一步走 12px，正好小于球半径，不会穿块 */
+  /**
+   * 球速：8ms 一步走 12px，小于球半径 16，不会穿块；
+   * 弹弹方块会把球速抬到 maxSpeedScale 倍（单步最多 20.4px），仍远小于方块 142×84，
+   * 最多"贴着方块边缘蹭过去一次"，不会整块穿透。
+   */
   shotSpeed: 1500,
   /** 弹弹方块：命中后球更快一点，作为"变化"而不是压力 */
   bouncyBoost: 1.18,

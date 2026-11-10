@@ -8,6 +8,7 @@ import { registry } from '../registry';
 import { createGameContext } from '../shell/createGameContext';
 import { recordDebugError } from '../shell/debug';
 import { platform } from '../shell/platform';
+import { useModal } from '../shell/modal';
 import { startPlayClock } from '../shell/playClock';
 import { useI18n } from '../shell/useI18n';
 import { useProgress } from '../stores/progress';
@@ -33,6 +34,18 @@ const leaving = ref(false);
 const toast = ref<string[] | null>(null);
 /** 今天第四件小事完成时的小门浮层（只有跨过门槛那一次会出现） */
 const reveal = ref(false);
+
+/* 三个全屏浮层：焦点移入、Esc 关闭、关闭后焦点还回去（见 shell/modal） */
+const leaveDialog = ref<HTMLElement | null>(null);
+const revealDialog = ref<HTMLElement | null>(null);
+const errorDialog = ref<HTMLElement | null>(null);
+
+useModal(leaveDialog, () => {
+  leaving.value = false;
+});
+/** 小门与错误态没有"取消"可言：Esc 与点遮罩一样，回任务页 */
+useModal(revealDialog, () => navigate('/tasks'));
+useModal(errorDialog, () => navigate('/tasks'));
 
 const progress = useProgress();
 const settings = useSettings();
@@ -257,6 +270,8 @@ onBeforeUnmount(async () => {
     <div
       v-if="loading && error === null"
       data-testid="play-loading"
+      role="status"
+      aria-live="polite"
       class="absolute inset-0 z-20 flex items-center justify-center bg-paper/95"
     >
       <div class="flex flex-col items-center gap-3">
@@ -268,7 +283,11 @@ onBeforeUnmount(async () => {
     <!-- 退出确认：误触不会直接中断这一局 -->
     <div
       v-if="leaving"
+      ref="leaveDialog"
       data-testid="play-leave-confirm"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('play.leaveConfirm')"
       class="absolute inset-0 z-30 flex items-center justify-center bg-ink/80 px-6"
     >
       <div class="w-full max-w-sm rounded-3xl bg-card p-6 text-center">
@@ -297,9 +316,13 @@ onBeforeUnmount(async () => {
     <!-- 错误态：只给孩子一句人话 + 两个出口 -->
     <div
       v-if="error !== null"
+      ref="errorDialog"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="play-error-text"
       class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-paper px-6 text-center"
     >
-      <p class="text-base text-ink">{{ error }}</p>
+      <p id="play-error-text" class="text-base text-ink">{{ error }}</p>
       <div class="flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
@@ -324,14 +347,18 @@ onBeforeUnmount(async () => {
     <!-- 发现小门：完成今天第四件小事时出现，一天只有这一次 -->
     <div
       v-if="reveal"
+      ref="revealDialog"
       data-testid="play-arcade-reveal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="play-reveal-title"
       class="absolute inset-0 z-50 flex items-center justify-center bg-ink/70 px-6"
     >
       <div class="w-full max-w-sm rounded-3xl border-2 border-bamboo bg-card p-6 text-center">
         <div class="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-mint text-5xl" aria-hidden="true">
           🚪
         </div>
-        <p class="mt-3 text-xl font-bold text-bamboo-deep">{{ t('arcade.reveal.title') }}</p>
+        <p id="play-reveal-title" class="mt-3 text-xl font-bold text-bamboo-deep">{{ t('arcade.reveal.title') }}</p>
         <p class="mt-2 text-base text-ink">{{ t('arcade.reveal.body') }}</p>
         <button
           type="button"

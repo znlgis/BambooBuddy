@@ -11,8 +11,10 @@ export interface GrowthStage {
 }
 
 /**
- * 四个成长阶段（产品方案"熊猫幼崽 → 小熊猫 → 大熊猫 → 解锁小屋/旅行日记"）。
- * 一次任务约 10–16 成长值，所以第四个阶段大约是二十多次陪伴之后 —— 不逼孩子肝。
+ * 四个成长阶段（产品方案"熊猫幼崽 → 小熊猫 → 大熊猫 → 竹竹的小屋"）。
+ * 一次任务约 10–14 成长值（内容 JSON 的实际 reward.xp 区间），所以第四个阶段大约是
+ * 二十多次陪伴之后 —— 不逼孩子肝。日记页始终开放，不受成长值门控（只有玩法的
+ * unlockLevel 与装扮/小窝物件看阶段）。
  */
 export const STAGES: readonly GrowthStage[] = [
   { id: 1, name: '熊猫幼崽', nameEn: 'Panda Cub', atXp: 0, scale: 0.82 },
@@ -46,9 +48,4 @@ export function xpToNextStage(xp: number): number {
   const next = nextStageForXp(xp);
   if (next === null) return 0;
   return Math.max(0, next.atXp - safeXp(xp));
-}
-
-/** 等级只用于展示（每个阶段内部还是有小步子的成长感） */
-export function levelForXp(xp: number): number {
-  return 1 + Math.floor(safeXp(xp) / 20);
 }

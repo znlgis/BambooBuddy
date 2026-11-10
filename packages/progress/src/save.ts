@@ -11,7 +11,7 @@ import { ARCADE_GAME_IDS, CARE_ACTIONS, SAVE_SCHEMA_VERSION } from '@bamboo/game
 import { STAT_KEYS, TASK_IDS } from '@bamboo/content/ids';
 import type { StatKey, TaskId } from '@bamboo/content/ids';
 import { CATALOG, defaultEquipment, findItem } from './catalog';
-import { dayKey } from './day';
+import { dayKey, isDayKey } from './day';
 import { normalizeStats } from './stats';
 
 type Raw = Record<string, unknown>;
@@ -175,7 +175,8 @@ export function pruneDays(
   today?: string,
 ): Record<string, DayRecord> {
   const keys = Object.keys(days).sort();
-  const limit = Math.max(0, Math.floor(keep));
+  // 坏 keep（NaN / Infinity）兜底成上限：Math.floor(NaN) 仍是 NaN，slice(-NaN) 等于不裁剪
+  const limit = Number.isFinite(keep) ? Math.max(0, Math.floor(keep)) : MAX_DAYS;
   const past = today === undefined ? keys : keys.filter((key) => key <= today);
   const future = today === undefined ? [] : keys.filter((key) => key > today);
   // 未来键也要限额：坏档里可能塞进成百上千个未来的合法日期串，不能无上限保留
@@ -235,7 +236,8 @@ function sanitizePet(value: unknown, now: number): PetState {
   if (isRecord(value.careDays)) {
     for (const action of CARE_ACTIONS) {
       const day = value.careDays[action];
-      if (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)) careDays[action] = day;
+      // 合法日历日才算：2026-02-31 这种坏键留着也永远不等于任何一天
+      if (isDayKey(day)) careDays[action] = day;
     }
   }
 
@@ -246,10 +248,8 @@ function sanitizePet(value: unknown, now: number): PetState {
         : base.name,
     xp: positiveInt(value.xp),
     stats: sanitizeStats(value.stats),
-    lastDecayDay:
-      typeof value.lastDecayDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.lastDecayDay)
-        ? value.lastDecayDay
-        : base.lastDecayDay,
+    // 坏日历日必须换掉：daysBetween(坏键, 今天) 永远返回 0，留着会让跨天衰减永久失效
+    lastDecayDay: isDayKey(value.lastDecayDay) ? value.lastDecayDay : base.lastDecayDay,
     shoots: positiveInt(value.shoots),
     fragments: positiveInt(value.fragments),
     unlocked: [...new Set(unlocked)],
@@ -276,10 +276,7 @@ function sanitizeArcade(value: unknown): Record<ArcadeGameId, ArcadeProgress> {
     out[id] = {
       best: positiveInt(raw.best),
       plays: positiveInt(raw.plays),
-      lastPlayedDay:
-        typeof raw.lastPlayedDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastPlayedDay)
-          ? raw.lastPlayedDay
-          : null,
+      lastPlayedDay: isDayKey(raw.lastPlayedDay) ? raw.lastPlayedDay : null,
     };
   }
   return out;
@@ -299,10 +296,7 @@ function sanitizeTasks(value: unknown): Record<TaskId, TaskProgress> {
       stars,
       completions: positiveInt(raw.completions),
       lastPlayedAt: typeof raw.lastPlayedAt === 'number' && Number.isFinite(raw.lastPlayedAt) ? raw.lastPlayedAt : null,
-      lastCompletedDay:
-        typeof raw.lastCompletedDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastCompletedDay)
-          ? raw.lastCompletedDay
-          : null,
+      lastCompletedDay: isDayKey(raw.lastCompletedDay) ? raw.lastCompletedDay : null,
       streak: positiveInt(raw.streak),
       bestStreak: positiveInt(raw.bestStreak),
       // v5：v4 及更老没有这一项 → 0（"上次没有失误记录"，第一次完成不会硬夸"进步"）
@@ -316,7 +310,8 @@ function sanitizeDays(value: unknown): Record<string, DayRecord> {
   if (!isRecord(value)) return {};
   const days: Record<string, DayRecord> = {};
   for (const [key, raw] of Object.entries(value)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isRecord(raw)) continue;
+    // 非法日历日整条丢掉（2026-02-31 留着只会挤占 30 天额度，永远读不到）
+    if (!isDayKey(key) || !isRecord(raw)) continue;
     const rewards = isRecord(raw.rewards) ? raw.rewards : {};
     days[key] = {
       date: key,

@@ -5,7 +5,7 @@ import { createPopstarScene } from '../popstar.scene';
 
 export const manifest: ArcadeManifest = {
   id: 'popstar',
-  title: '消灭星星',
+  title: '星星抱抱',
   version: '0.1.0',
   designSize: { width: ARCADE_DESIGN.width, height: ARCADE_DESIGN.height },
   ageRange: [4, 8],

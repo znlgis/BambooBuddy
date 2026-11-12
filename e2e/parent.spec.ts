@@ -153,12 +153,14 @@ test('成人门：连续输错 3 次锁 30 秒，答不对就进不了家长页'
 
   // 题目是两个 11–89 的两位数相加（最小 12 + 11 = 23），"1" 一定是错答案
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.getByTestId('adult-gate-input').fill('1');
+    await page.getByTestId('adult-gate-key-1').click();
     await page.getByTestId('adult-gate-submit').click();
   }
 
   await expect(page.getByTestId('adult-gate-locked')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId('adult-gate-input')).toBeDisabled();
+  // 锁定期整块键盘都禁用：不是"只是提交按钮灰了"
+  await expect(page.getByTestId('adult-gate-key-1')).toBeDisabled();
+  await expect(page.getByTestId('adult-gate-submit')).toBeDisabled();
   await expect(parentView(page)).toBeHidden();
 });
 

@@ -34,9 +34,20 @@ pnpm preview      # http://127.0.0.1:5191
 验收（提交前必须全绿）：
 
 ```bash
-pnpm verify       # typecheck → lint → test → content:check → pack:check → build → size
+pnpm verify       # typecheck → lint → test → content:check → pack:check → build → size → toy:check
 pnpm e2e          # Playwright：10 个玩法 autoplay 全通关 + 真实操作 + 家长页 + 双语
 ```
+
+### 发布到 B 站 Toy
+
+```bash
+pnpm build        # 产物 apps/site/dist，直接压成 zip 上传（不要传源码）
+pnpm toy:check    # 按 Toy 审核规则自检：入口 1MB / 整包 50MB / 相对路径 / 无自由输入 / 无站外链接
+```
+
+分类、封面、图标的填法与审核红线逐条对照见 [Toy 发布自检](docs/Toy发布自检.md)；
+封面与图标已出图：`docs/toy/poster.png`（1200×900）、`docs/toy/icon-512.png`。
+**分类不要选「游戏」** —— 游戏类 Toy 未成年人不可以游玩，而本作面向 4–8 岁。
 
 ### 打包成 EXE / APK（含 GitHub Actions 自动发布）
 
@@ -90,7 +101,7 @@ git tag v0.2.0 && git push origin v0.2.0
 | 家长页 | `views/ParentView.vue` | 安全边界、最近七天记录、本周练习过的习惯、声音开关、长按清档 |
 | 情感设计 | 全局 | 竹竹叫玩家「小伙伴」；做对鼓掌冒星星；做错只说"再试一次"，无失败音效；每天固定的亲近动作 |
 | 中英文双语 | `packages/i18n` + `packages/content/src/i18n/en` | 界面文案、任务标题/习惯/日记、玩法语音与关卡文案全部双语；`?lang=en` 或头部语言按钮切换，选择记在 `localStorage`；英文文案是懒加载 chunk，中文用户不下载 |
-| 隐藏小游戏 | `games/arcade` + `apps/site/src/views/Arcade*.vue` | 完成当天四件小事后，小屋出现「竹林小门」；三款经典微信小游戏按 4–8 岁重做（消灭星星 / 弹一弹 / 俄罗斯方块），普通模式每天最多 21 局（三款合计），次日局数归零、难度与最高分延续，无限畅玩不限局；无失败、无奖励、无内购 |
+| 隐藏小游戏 | `games/arcade` + `apps/site/src/views/Arcade*.vue` | 完成当天四件小事后，小屋出现「竹林小门」；三款经典街机玩法按 4–8 岁重做（星星抱抱 / 竹球弹弹 / 竹块叠叠），普通模式每天最多 21 局（三款合计），次日局数归零、难度与最高分延续，无限畅玩不限局；无失败、无奖励、无内购 |
 | 每日份量与丰收日 | `HomeView` / `ProgressManager` | 小屋明示"今日小事 n 件、已完成 m 件"；**每周六**是丰收日（竹笋 ×2，成长值不翻）；30 分钟给一张"玩够啦"收尾卡片（不锁不惩罚） |
 | 累计里程碑 | `packages/progress/src/catalog.ts` | 按**累计**件数 1/5/10/20/30/50 解锁里程碑，只增不减；断签不清零、不提示 |
 | 竹笋小卖部 | `HomeExtras.vue` + `rewards.feedBird` | 花 1 根竹笋请小鸟，只给动画与计数，不给数值增益（避免经济崩） |
@@ -123,9 +134,9 @@ git tag v0.2.0 && git push origin v0.2.0
 
 | 游戏 | 保留的核心乐趣 | 低龄化改造 | 不失败的处理 |
 |---|---|---|---|
-| 消灭星星 | 一按爆一片、下落补星、连消音调升高 | 8×10、4 色 + 花纹双通道（色盲友好）、无倒计时 | 没有可消组时，剩下的星星自己飞回天上并计入收集 |
-| 弹一弹 | 瞄准 → 弹射 → 到处反弹 → 方块一串碎 | 任意位置拖拽瞄准、虚线 + 反弹点预测、1 击碎不做算术 | 每 6 发方块下沉一格；贴底时「开出小花」飞走，本轮算完成 |
-| 俄罗斯方块 | 拼、消行、越堆越高 | 8×14、四个大按钮 + 2 个预览、不做 hold、起始 1.1 秒/格 | 堆到顶变「彩虹」，清掉最下 4 行继续玩 |
+| 星星抱抱 | 一按爆一片、下落补星、连消音调升高 | 8×10、4 色 + 花纹双通道（色盲友好）、无倒计时 | 没有可消组时，剩下的星星自己飞回天上并计入收集 |
+| 竹球弹弹 | 瞄准 → 弹射 → 到处反弹 → 方块一串碎 | 任意位置拖拽瞄准、虚线 + 反弹点预测、1 击碎不做算术 | 每 6 发方块下沉一格；贴底时「开出小花」飞走，本轮算完成 |
+| 竹块叠叠 | 拼、消行、越堆越高 | 8×14、四个大按钮 + 2 个预览、不做 hold、起始 1.1 秒/格 | 堆到顶变「彩虹」，清掉最下 4 行继续玩 |
 
 - **解锁**：今天完成 **4 件不同**的小事（与「今日推荐」同一个数量常量 `DAILY_TASK_TARGET`）。按数量而不是「推荐的那一批」——推荐集是日期 + 时段的种子，中午/晚上会换一批，按集合判定会出现「上午解锁、中午又锁上」。
 - **每天 21 局**：普通模式下三款合计每天最多 21 局，局数记在 `days[今天].arcadePlays`，次日自动归零。一局真正结束（`arcade:complete`）才消耗一局，中途退出不算。
@@ -140,9 +151,9 @@ git tag v0.2.0 && git push origin v0.2.0
 |---|---|---|
 | ![小门](docs/screenshots/arcade-home.png) | ![发现小门](docs/screenshots/arcade-reveal.png) | ![游戏厅](docs/screenshots/arcade-lobby.png) |
 
-| 消灭星星 | 弹一弹 | 俄罗斯方块 |
+| 星星抱抱 | 竹球弹弹 | 竹块叠叠 |
 |---|---|---|
-| ![消灭星星](docs/screenshots/arcade-popstar.png) | ![弹一弹](docs/screenshots/arcade-bounce.png) | ![俄罗斯方块](docs/screenshots/arcade-tetris.png) |
+| ![星星抱抱](docs/screenshots/arcade-popstar.png) | ![竹球弹弹](docs/screenshots/arcade-bounce.png) | ![竹块叠叠](docs/screenshots/arcade-tetris.png) |
 
 | 连点竹竹 7 次 | 当天无限畅玩 |
 |---|---|
@@ -189,7 +200,7 @@ BambooBuddy/
 │  ├─ phaser-kit/             # 主题、卡通绘制、竹竹与道具、拖拽、BaseScene、Phaser 裁剪版
 │  └─ templates/              # 8 个玩法模板：*.logic.ts（判定）+ *.ts（场景）+ 关卡 schema
 ├─ games/daily/               # 10 个玩法的入口（一个任务 = 一个动态 import 的子路径）
-├─ games/arcade/              # 三款隐藏小游戏（消灭星星 / 弹一弹 / 俄罗斯方块，各自独立 chunk）
+├─ games/arcade/              # 三款隐藏小游戏（星星抱抱 / 竹球弹弹 / 竹块叠叠，各自独立 chunk）
 ├─ e2e/                       # Playwright：冒烟、真实操作、家长页、盲区用例、生产产物懒加载
 ├─ scripts/                   # verify / 体积门禁 / 图标 / APK / keystore / 打包体检
 └─ docs/

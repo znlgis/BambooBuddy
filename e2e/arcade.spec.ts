@@ -355,5 +355,5 @@ test('英文：游戏厅整页英文', async ({ page }) => {
   await page.goto('/?lang=en#/arcade');
   await expect(page.getByTestId('arcade-view')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Bamboo Arcade')).toBeVisible();
-  await expect(page.getByTestId('arcade-card-popstar')).toContainText('Pop the Stars');
+  await expect(page.getByTestId('arcade-card-popstar')).toContainText('Star Hugs');
 });

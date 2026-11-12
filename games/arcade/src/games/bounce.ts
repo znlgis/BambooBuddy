@@ -5,7 +5,7 @@ import { createBounceScene } from '../bounce.scene';
 
 export const manifest: ArcadeManifest = {
   id: 'bounce',
-  title: '弹一弹',
+  title: '竹球弹弹',
   version: '0.1.0',
   designSize: { width: ARCADE_DESIGN.width, height: ARCADE_DESIGN.height },
   ageRange: [4, 8],

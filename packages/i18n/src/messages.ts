@@ -322,6 +322,7 @@ export const ZH_SURFACE_KEYS = [
   'gate.title',
   'gate.prompt',
   'gate.placeholder',
+  'gate.backspace',
   'gate.submit',
   'gate.cancel',
   'gate.wrong',

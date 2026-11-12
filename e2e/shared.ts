@@ -276,7 +276,10 @@ export async function passAdultGate(page: Page): Promise<void> {
     throw new Error('成人门里找不到形如 "12 + 34 = ?" 的算式，无法自动通过；门文本：' + text);
   }
   const answer = Number(match[1]) + Number(match[2]);
-  await page.getByTestId('adult-gate-input').fill(String(answer));
+  // 门里没有 <input>（自由输入是 Toy 审核红线），只有屏幕数字键盘：逐位点。
+  for (const digit of String(answer)) {
+    await page.getByTestId('adult-gate-key-' + digit).click();
+  }
   await page.getByTestId('adult-gate-submit').click();
   // 答对后门会删掉（v-if=false），toBeHidden 对 detached 元素同样成立
   await expect(gate).toBeHidden({ timeout: 15_000 });

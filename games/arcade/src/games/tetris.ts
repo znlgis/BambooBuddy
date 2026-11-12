@@ -5,7 +5,7 @@ import { createTetrisScene } from '../tetris.scene';
 
 export const manifest: ArcadeManifest = {
   id: 'tetris',
-  title: '俄罗斯方块',
+  title: '竹块叠叠',
   version: '0.1.0',
   designSize: { width: ARCADE_DESIGN.width, height: ARCADE_DESIGN.height },
   ageRange: [4, 8],

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
  * 为什么并行：这六步之间没有任何依赖，串起来只是白等（CHAGS 实测 65.8s → 35s）。
  * 但"提交前必须全绿"这条纪律一点没松：任一步失败，整体非 0。
  *
- * 为什么最后串行 size：体积断言的对象是构建产物，和 build 并行只会读到上一轮的 dist，
+ * 为什么最后串行 size / toy:check：两者的断言对象都是构建产物，和 build 并行只会读到上一轮的 dist，
  * 那是最坏的一种假绿（旧产物不超标，新产物已经超了）。
  *
  * 输出保留各自前缀：挂在哪一步、是哪份日志，一眼能看出来。
@@ -97,10 +97,17 @@ if (failed.length > 0) {
   process.exit(1);
 }
 
-// size 读 dist，必须在 build 之后单独跑
+// size / toy:check 都读 dist，必须在 build 之后单独跑
 const size = await run('size', 'pnpm size', COLORS[0]);
 if (size.code !== 0) {
   console.error('\n✗ 体积门禁失败');
+  process.exit(1);
+}
+
+// Toy 上线自检：入口 1MB / 整包 50MB / 相对路径 / 无自由输入 / 无站外链接
+const toy = await run('toy:check', 'pnpm toy:check', COLORS[1]);
+if (toy.code !== 0) {
+  console.error('\n✗ Toy 上线自检失败');
   process.exit(1);
 }
 
@@ -108,7 +115,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 console.log('\n✅ 全部门禁通过（' + seconds + 's）');
 console.log(
   '   ' +
-    [...results, size]
+    [...results, size, toy]
       .map((result) => result.name + ' ' + (result.ms / 1000).toFixed(1) + 's')
       .join(' · '),
 );

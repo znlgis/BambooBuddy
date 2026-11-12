@@ -31,7 +31,9 @@ var Phaser = {
   Game: require('phaser-src/core/Game'),
   GameObjects: require('./gameobjects-trim.cjs'),
   Input: require('phaser-src/input'),
-  Loader: require('phaser-src/loader'),
+  // FEATURE_LOADER=false 时裁掉 Loader 子系统（atob / XMLHttpRequest / createObjectURL）：
+  // 十个玩法的画面全是程序化绘制，一帧贴图都不加载，Toy 包体安全检查却会把这些当风险点。
+  ...(typeof FEATURE_LOADER ? { Loader: require('phaser-src/loader') } : {}),
   Math: require('phaser-src/math'),
   Plugins: require('phaser-src/plugins'),
   Renderer: require('phaser-src/renderer'),

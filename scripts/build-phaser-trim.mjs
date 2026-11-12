@@ -121,6 +121,8 @@ function buildConfig(webpack, phaserSrcDir, outDir) {
         'typeof WEBGL_RENDERER': JSON.stringify(true),
         'typeof WEBGL_DEBUG': JSON.stringify(false),
         'typeof FEATURE_SOUND': JSON.stringify(false),
+        // Loader 子系统（atob / XHR / createObjectURL）：Toy 包体安全检查的风险点，本项目用不到
+        'typeof FEATURE_LOADER': JSON.stringify(false),
         'typeof EXPERIMENTAL': JSON.stringify(false),
       }),
     ],

@@ -16,7 +16,9 @@ export interface GameHostHooks {
  */
 function debugAllowed(): boolean {
   if (import.meta.env.DEV) return true;
-  return typeof navigator !== 'undefined' && navigator.webdriver === true;
+  // 生产构建里 VITE_DEBUG_HOOKS 未定义 → 整段被折叠成 false，`webdriver` 不会进产物
+  // （Toy 包体安全检查把自动化后门算作代码安全风险）。e2e 构建用 --mode e2e 注入。
+  return import.meta.env.VITE_DEBUG_HOOKS === '1';
 }
 
 /** ?autoplay=1 自动通关；?instant=1 跳过过场与语音等待（截图/冒烟巡检用） */

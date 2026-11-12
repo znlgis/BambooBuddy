@@ -13,7 +13,7 @@
     "test": "vitest run",
     "content:check": "tsx packages/templates/src/cli/check-content.ts",
     "e2e": "playwright test",
-    "e2e:dist": "pnpm build && playwright test --config playwright.preview.config.ts",
+    "e2e:dist": "pnpm --filter @bamboo/site build --mode e2e && playwright test --config playwright.preview.config.ts",
     "size": "node scripts/check-size.mjs",
     "toy:check": "node scripts/check-toy.mjs",
     "phaser:trim": "node scripts/build-phaser-trim.mjs",
@@ -38,6 +38,7 @@
     "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.4",
-    "vue-tsc": "^3.3.13"
+    "vue-tsc": "^3.3.13",
+    "webpack": "^5.112.2"
   }
 }
